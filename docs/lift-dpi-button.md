@@ -115,8 +115,19 @@ Important version caveat: this branch is based on the fork's `main` (16.1.8, Jul
 16.3.0, which moved `src/core/CoreService` to `src/apps/CoreService`, no longer uses
 `pqrs::osx::iokit_hid_queue_value_monitor` in `entry.hpp`, and changed packaging. Installing this build is a downgrade.
 A mechanical port check against `v16.3.0` showed that the new headers, `device.hpp`, and the tests apply cleanly, but
-the `entry.hpp` wiring conflicts and needs manual adaptation. Decide between testing this 16.1.8-based build (run the
-official uninstaller first so no 16.3.0 components remain) or porting the change to 16.3.0 before the hardware test.
+the `entry.hpp` wiring conflicts and needs manual adaptation.
+
+Decision: the hardware test uses this 16.1.8-based build. Notes for the downgrade:
+
+- The pkg's preinstall script runs the installed version's `uninstall_core.sh`, which removes 16.3.0's core components.
+  Your `karabiner.json` uses no 16.2/16.3-only settings, so it loads unchanged.
+- This build bundles VirtualHIDDevice driver pkg 8.2.0; 16.3.0 installed 8.5.0. If Karabiner reports a driver version
+  mismatch after install, stop and roll back rather than changing the driver by hand.
+- 16.2.0 and 16.3.0 fixed modifications pausing for several seconds (up to 30) after wake. A short pause after wake
+  during the sleep/wake check is that old bug, not this change.
+- Turn off automatic update installation during the test (Settings > Update). Installing the official update removes
+  this feature.
+- For daily use after a successful test, port the change to the current upstream version.
 
 ## Install and rollback (manual, by Robert)
 
