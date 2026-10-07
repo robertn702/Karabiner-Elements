@@ -8,6 +8,7 @@
 #include "hid_keyboard_caps_lock_led_state_manager.hpp"
 #include "hid_queue_values_converter.hpp"
 #include "iokit_utility.hpp"
+#include "lift_dpi_button.hpp"
 #include "pressed_keys_manager.hpp"
 #include "run_loop_thread_utility.hpp"
 #include "types.hpp"
@@ -35,6 +36,7 @@ public:
         pqrs::not_null_shared_ptr_t<const core_configuration::core_configuration> core_configuration)
       : dispatcher_client(),
         device_id_(device_id),
+        device_(device),
         core_configuration_(core_configuration),
         device_properties_(device_properties::make_device_properties(device_id,
                                                                      device)),
@@ -62,11 +64,18 @@ public:
           });
         }
       }
+
+      update_lift_dpi_button();
     });
     hid_queue_value_monitor_->stopped.connect([this] {
       control_caps_lock_led_state_manager();
 
       game_pad_stick_converter_ = nullptr;
+
+      // The device is already closed. A held button is released by device_ungrabbed.
+      lift_dpi_button_ = nullptr;
+      pressed_keys_manager_->erase(momentary_switch_event(pqrs::hid::usage_page::button,
+                                                          pqrs::hid::usage::button::button_6));
     });
     hid_queue_value_monitor_->values_arrived.connect([this](auto&& values_ptr) {
       auto d = core_configuration_->get_selected_profile().get_device(device_properties_->get_device_identifiers());
@@ -163,6 +172,8 @@ public:
 
   ~entry() {
     detach_from_dispatcher([this] {
+      // Restore the DPI button before hid_queue_value_monitor_ closes the device.
+      lift_dpi_button_ = nullptr;
       hid_queue_value_monitor_ = nullptr;
       game_pad_stick_converter_ = nullptr;
       caps_lock_led_state_manager_ = nullptr;
@@ -182,6 +193,8 @@ public:
     if (game_pad_stick_converter_) {
       game_pad_stick_converter_->set_core_configuration(core_configuration);
     }
+
+    update_lift_dpi_button();
   }
 
   [[nodiscard]] pqrs::not_null_shared_ptr_t<device_properties> get_device_properties() const {
@@ -274,9 +287,18 @@ public:
 
     hid_queue_value_monitor_->async_start(options,
                                           std::chrono::milliseconds(1000));
+
+    // The monitor may still be seized if a stop request was cancelled by this start.
+    update_lift_dpi_button();
   }
 
   void async_stop_queue_value_monitor() {
+    // Release a held button while the device is still seized,
+    // and restore the DPI button before hid_queue_value_monitor_ closes the device.
+    if (lift_dpi_button_) {
+      lift_dpi_button_->stop();
+      lift_dpi_button_ = nullptr;
+    }
     hid_queue_value_monitor_->async_stop();
   }
 
@@ -313,6 +335,35 @@ public:
   }
 
 private:
+  // This method should be called in the shared dispatcher thread.
+  void update_lift_dpi_button() {
+    auto& identifiers = device_properties_->get_device_identifiers();
+    auto d = core_configuration_->get_selected_profile().get_device(identifiers);
+
+    bool enabled = seized() &&
+                   lift_dpi_button::target(identifiers.get_vendor_id(),
+                                           identifiers.get_product_id()) &&
+                   d->get_logitech_lift_dpi_button_as_button6();
+
+    if (enabled && !lift_dpi_button_) {
+      if (device_) {
+        lift_dpi_button_ = std::make_unique<lift_dpi_button::lift_dpi_button>(pqrs::cf::run_loop_thread::extra::get_shared_run_loop_thread(),
+                                                                              *device_);
+        lift_dpi_button_->pressed_changed.connect([this](auto&& pressed, auto&& time_stamp) {
+          hid_queue_values_arrived(*this,
+                                   lift_dpi_button::make_event_queue_entries(device_id_,
+                                                                             pressed,
+                                                                             time_stamp,
+                                                                             pressed_keys_manager_));
+        });
+      }
+    } else if (!enabled && lift_dpi_button_) {
+      // Release a held button while the device is still seized, then restore the firmware behavior.
+      lift_dpi_button_->stop();
+      lift_dpi_button_ = nullptr;
+    }
+  }
+
   void control_caps_lock_led_state_manager() {
     if (device_properties_->get_device_identifiers().get_is_virtual_device()) {
       return;
@@ -332,12 +383,14 @@ private:
   }
 
   device_id device_id_;
+  pqrs::cf::cf_ptr<IOHIDDeviceRef> device_;
   pqrs::not_null_shared_ptr_t<const core_configuration::core_configuration> core_configuration_;
   pqrs::not_null_shared_ptr_t<device_properties> device_properties_;
   pqrs::not_null_shared_ptr_t<pressed_keys_manager> pressed_keys_manager_;
   std::shared_ptr<hid_keyboard_caps_lock_led_state_manager> caps_lock_led_state_manager_;
   std::shared_ptr<pqrs::osx::iokit_hid_queue_value_monitor> hid_queue_value_monitor_;
   std::unique_ptr<game_pad_stick_converter> game_pad_stick_converter_;
+  std::unique_ptr<lift_dpi_button::lift_dpi_button> lift_dpi_button_;
   hid_queue_values_converter hid_queue_values_converter_;
   std::string device_name_;
   std::string device_short_name_;
