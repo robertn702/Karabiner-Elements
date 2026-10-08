@@ -182,6 +182,29 @@ Rollback:
    and reinstall the official Karabiner-Elements dmg from https://karabiner-elements.pqrs.org/. Then repeat the
    permission reset for the official signer.
 
+## Hardware test attempt: blocked by code signing (Oct 7, 2026)
+
+The dmg built here was installed over the official 16.3.0. macOS killed `Karabiner-Core-Service` about 14 seconds after
+launch, twice, and Karabiner stopped modifying keys:
+
+```text
+exception:   EXC_CRASH, SIGKILL (Code Signature Invalid)
+termination: namespace CODESIGNING, indicator "Launch Constraint Violation"
+```
+
+The background services are still registered against the official signing team (`G43BCU2T37`); this build is signed by
+team `9967D85FH`, so launchd invalidates the launch. The build was rolled back to the official release and the test was
+deferred.
+
+This is not a defect in the HID++ code. With the config flag unset the feature is never activated, the crash report
+contains no Karabiner HID++ frames, and the recorded warning storm is the pre-existing
+`drop unmatched momentary switch key_up` message.
+
+To retry a locally built Karabiner, the background services must be re-registered for the new signer: disable both
+background items, remove the Accessibility grants, restart macOS, then reopen Karabiner and grant permissions again
+(upstream README, "Step 4"). If that does not stick, the alternatives are a Developer ID identity (paid Apple Developer
+Program), a full uninstall/install cycle, or building from a version whose source compiles under the installed Xcode.
+
 ## Manual acceptance checklist
 
 Run `tail -f /var/log/karabiner/core_service.log` while testing. Expected lines: `Lift DPI button: diverted
