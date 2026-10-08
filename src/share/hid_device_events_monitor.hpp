@@ -28,6 +28,11 @@ public:
   nod::signal<void()> stopped;
   nod::signal<void(pqrs::not_null_shared_ptr_t<std::vector<pqrs::osx::iokit_hid_value>>)> values_arrived;
   nod::signal<void(const std::string&, pqrs::osx::iokit_return)> error_occurred;
+  // The report span is valid only for the duration of the signal invocation.
+  nod::signal<void(uint32_t report_id,
+                   std::span<const uint8_t> report,
+                   pqrs::osx::chrono::absolute_time_point time_stamp)>
+      vendor_input_report_arrived;
 
   //
   // Methods
@@ -36,6 +41,10 @@ public:
   struct configuration final {
     bool enable_input_report_handler = true;
     std::function<void(uint32_t, std::span<const uint8_t>)> input_report_observer;
+    // Selects raw input reports of a vendor protocol to deliver through vendor_input_report_arrived.
+    // It is called in both run_loop_thread and the dispatcher thread, so it must be stateless.
+    bool (*vendor_input_report_filter)(uint32_t report_id,
+                                       std::span<const uint8_t> report) noexcept = nullptr;
   };
 
   hid_device_events_monitor(const hid_device_events_monitor&) = delete;
@@ -47,6 +56,7 @@ public:
       const device_properties& device_properties,
       configuration configuration)
       : dispatcher_client(weak_dispatcher),
+        vendor_input_report_filter_(configuration.vendor_input_report_filter),
         last_time_stamp_(0) {
     pqrs::osx::iokit_hid_device_events_monitor::parameters parameters;
 
@@ -69,14 +79,19 @@ public:
       }
     }
 
-    if (configuration.input_report_observer || input_report_handler_) {
+    if (configuration.input_report_observer || input_report_handler_ || vendor_input_report_filter_) {
       parameters.observe_input_reports = true;
 
       parameters.input_report_filter =
           [observer = std::move(configuration.input_report_observer),
-           handler = input_report_handler_](auto report_id, auto report) {
+           handler = input_report_handler_,
+           vendor_filter = vendor_input_report_filter_](auto report_id, auto report) {
             if (observer) {
               observer(report_id, report);
+            }
+
+            if (vendor_filter && vendor_filter(report_id, report)) {
+              return true;
             }
 
             return handler && handler->should_accept_report(report_id, report);
@@ -117,6 +132,12 @@ public:
 
     device_events_monitor_->input_report_arrived.connect(
         [this](auto report_id, auto report, auto time_stamp) {
+          if (vendor_input_report_filter_ &&
+              vendor_input_report_filter_(report_id, report)) {
+            vendor_input_report_arrived(report_id, report, time_stamp);
+            return;
+          }
+
           if (!input_report_handler_) {
             return;
           }
@@ -158,11 +179,12 @@ public:
     return device_events_monitor_->seized();
   }
 
-private:
-  void input_values_arrived(
+  // Publishes values derived from vendor input reports through values_arrived,
+  // with the same time stamp normalization as other values.
+  // This method should be called in the shared dispatcher thread.
+  void post_input_values(
       pqrs::not_null_shared_ptr_t<std::vector<pqrs::osx::iokit_hid_value>> hid_values) {
-    normalize_time_stamps(*hid_values);
-    values_arrived(hid_values);
+    input_values_arrived(hid_values);
   }
 
   [[nodiscard]] static std::vector<uint8_t> find_report_descriptor(IOHIDDeviceRef device) {
@@ -180,6 +202,13 @@ private:
     }
 
     return result;
+  }
+
+private:
+  void input_values_arrived(
+      pqrs::not_null_shared_ptr_t<std::vector<pqrs::osx::iokit_hid_value>> hid_values) {
+    normalize_time_stamps(*hid_values);
+    values_arrived(hid_values);
   }
 
   void normalize_time_stamps(
@@ -206,6 +235,8 @@ private:
   }
 
   std::shared_ptr<pqrs::osx::iokit_hid_device_events_monitor> device_events_monitor_;
+  bool (*vendor_input_report_filter_)(uint32_t report_id,
+                                      std::span<const uint8_t> report) noexcept;
 
   // should_accept_report and reset_filter_state access filter state from run_loop_thread, while
   // handle and reset access handler state from the shared dispatcher thread.
