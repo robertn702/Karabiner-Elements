@@ -99,6 +99,24 @@ make -C src/core/CoreService
 make -C src/lib/libkrbn
 ```
 
+## Xcode 27 build workaround
+
+The source is from before Xcode 27 and does not compile as-is under it (Xcode 26, which CI uses, accepts it). Nine
+unrelated Swift files need a mechanical, behavior-preserving fix. It is unrelated to ROB-319, and the same code is
+unchanged in 16.3.0, so it is not a reason to port. The dmg below was built with these fixes applied; the source
+tree was reverted afterwards, so a rebuild needs them again (saved locally as `.scratch/xcode27-workaround.patch`).
+
+Two patterns:
+
+1. `'self' used before all stored properties are initialized` — in `src/apps/share/swift/Views/DoubleTextField.swift`
+   and `IntTextField.swift`, move the `text = String(value.wrappedValue)` line in `init` to after the `formatter`
+   setup.
+2. `unstructured throwing task created by 'init(name:priority:operation:)' is not used` — prefix the statement with
+   `_ = ` to make the discarded result explicit. One occurrence per file in:
+   `src/apps/MultitouchExtension/src/{KarabinerMultitouchExtensionApp,MECoreServiceDaemonClient,MultitouchDeviceManager}.swift`,
+   `src/apps/SettingsWindow/src/{ComplexModificationsFileImport,ExternalEditorController,VirtualHIDDeviceManager}.swift`
+   (`ExternalEditorController` has two, at lines 74 and 131) and `src/apps/Updater/src/Updater.swift`.
+
 ## Package for a hardware test
 
 Background services only run when signed. This machine has Apple Development identities only (no Developer ID), which
@@ -110,6 +128,19 @@ export PQRS_ORG_CODE_SIGN_IDENTITY=<hash>
 export PQRS_ORG_INSTALLER_CODE_SIGN_IDENTITY=<hash>
 make package                                # creates Karabiner-Elements-16.1.8.dmg
 ```
+
+Result of the build used for this test (`Karabiner-Elements-16.1.8.dmg`, 48.5 MB, in the workspace):
+
+- The app bundles are signed with `Apple Development: robertn702@gmail.com` and `codesign --verify --deep --strict`
+  passes on `Karabiner-Core-Service.app`.
+- The outer pkg is **unsigned**. `productsign` cannot use an Apple Development certificate, so the script skips it
+  (`Package "Karabiner-Elements.pkg": Status: no signature`). Unsigned pkgs install normally; the dmg was built
+  locally, so it has no quarantine attribute and no Gatekeeper prompt should appear.
+- The official Karabiner is signed by team `G43BCU2T37`; this build is team `9967D85FH`, so macOS treats it as a
+  different app and permissions must be granted again.
+- Verified in the built Core Service binary: `strings Karabiner-Core-Service | grep -c "Lift DPI button"` returns 12,
+  and the binary contains `logitech_lift_dpi_button_as_button6` and `Lift DPI button: diverted (REPROG_CONTROLS_V4
+  feature index 0x..)`.
 
 Important version caveat: this branch is based on the fork's `main` (16.1.8, July 2026). The installed Karabiner is
 16.3.0, which moved `src/core/CoreService` to `src/apps/CoreService`, no longer uses
