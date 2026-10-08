@@ -401,6 +401,7 @@ void run_device_test() {
           {"mouse_swap_wheels", true},
           {"mouse_swap_xy", true},
           {"game_pad_swap_sticks", true},
+          {"logitech_lift_dpi_button_as_button6", true},
           {"game_pad_xy_stick_deadzone", 0.2},
           {"game_pad_xy_stick_delta_magnitude_detection_threshold", 0.1},
           {"game_pad_xy_stick_continued_movement_absolute_magnitude_threshold", 0.5},
@@ -444,6 +445,7 @@ void run_device_test() {
                                        })},
           {"game_pad_stick_vertical_wheel_formula", "sgn(sin(radian))"},
           {"game_pad_stick_horizontal_wheel_formula", "sgn(cos(radian))"},
+          {"logitech_lift_dpi_button_as_button6", true},
           {"manipulate_caps_lock_led", false},
           {"mouse_discard_horizontal_wheel", true},
           {"mouse_discard_vertical_wheel", true},
@@ -460,6 +462,35 @@ void run_device_test() {
           {"treat_as_built_in_keyboard", true},
       });
       expect(device.to_json() == expected) << UT_SHOW_LINE;
+    }
+  };
+
+  "device.logitech_lift_dpi_button_as_button6"_test = [] {
+    // Default off
+    {
+      krbn::core_configuration::details::device device(nlohmann::json::object(),
+                                                       krbn::core_configuration::error_handling::strict);
+      expect(device.get_logitech_lift_dpi_button_as_button6() == false);
+      expect(!device.to_json().contains("logitech_lift_dpi_button_as_button6"));
+    }
+
+    // Load, set, and save
+    {
+      krbn::core_configuration::details::device device(nlohmann::json({{"logitech_lift_dpi_button_as_button6", true}}),
+                                                       krbn::core_configuration::error_handling::strict);
+      expect(device.get_logitech_lift_dpi_button_as_button6() == true);
+      expect(device.to_json()["logitech_lift_dpi_button_as_button6"] == true);
+
+      device.set_logitech_lift_dpi_button_as_button6(false);
+      expect(!device.to_json().contains("logitech_lift_dpi_button_as_button6"));
+    }
+
+    // Invalid type
+    {
+      expect(throws([] {
+        krbn::core_configuration::details::device device(nlohmann::json({{"logitech_lift_dpi_button_as_button6", "true"}}),
+                                                         krbn::core_configuration::error_handling::strict);
+      }));
     }
   };
 

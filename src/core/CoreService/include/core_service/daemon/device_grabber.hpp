@@ -684,7 +684,7 @@ private:
 
     enqueue_to_dispatcher([this] {
       for (auto&& entry : entries_ | std::views::values) {
-        entry->get_hid_queue_value_monitor()->async_stop();
+        entry->async_stop_queue_value_monitor();
       }
 
       logger::get_logger()->info("Connected devices are ungrabbed");

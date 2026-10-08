@@ -94,6 +94,10 @@ public:
                                          game_pad_swap_sticks_,
                                          false);
 
+    helper_values_.push_back_value<bool>("logitech_lift_dpi_button_as_button6",
+                                         logitech_lift_dpi_button_as_button6_,
+                                         false);
+
     helper_values_.push_back_value<double>("game_pad_xy_stick_deadzone",
                                            game_pad_xy_stick_deadzone_,
                                            0.1);
@@ -487,6 +491,15 @@ cos(radian) * m;
     coordinate_between_properties();
   }
 
+  [[nodiscard]] const bool& get_logitech_lift_dpi_button_as_button6() const {
+    return logitech_lift_dpi_button_as_button6_;
+  }
+  void set_logitech_lift_dpi_button_as_button6(bool value) {
+    logitech_lift_dpi_button_as_button6_ = value;
+
+    coordinate_between_properties();
+  }
+
   //
   // game_pad_xy_stick_XXX
   //
@@ -655,6 +668,7 @@ private:
   bool mouse_discard_vertical_wheel_;
   bool mouse_discard_horizontal_wheel_;
   bool game_pad_swap_sticks_;
+  bool logitech_lift_dpi_button_as_button6_;
 
   double game_pad_xy_stick_deadzone_;
   double game_pad_xy_stick_delta_magnitude_detection_threshold_;
