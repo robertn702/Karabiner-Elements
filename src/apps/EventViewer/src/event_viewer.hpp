@@ -13,6 +13,7 @@ typedef void (*krbn_json_received_callback)(const char* _Nonnull json_string);
 typedef void (*krbn_hid_value_monitor_stopped_callback)(void);
 typedef void (*krbn_termination_completion_callback)(void);
 typedef void (*krbn_hid_value_arrived_callback)(uint64_t device_id,
+                                                bool is_virtual_keyboard,
                                                 int32_t usage_page,
                                                 int32_t usage,
                                                 int64_t integer_value,

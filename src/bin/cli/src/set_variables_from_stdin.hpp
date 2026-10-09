@@ -12,18 +12,21 @@
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <optional>
+#include <pqrs/dispatcher.hpp>
 #include <pqrs/thread_wait.hpp>
 #include <stdexcept>
 
 namespace krbn::cli::set_variables_from_stdin {
 class runner final : public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   runner(const runner&) = delete;
 
   explicit runner(bool verbose)
-      : dispatcher_client(),
-        verbose_(verbose),
+      : verbose_(verbose),
         input_completion_wait_(pqrs::make_thread_wait()) {
+    dispatcher_client_constructor_guard_.initialize();
   }
 
   ~runner() override {
@@ -34,38 +37,41 @@ public:
 
 private:
   class components_manager final : public pqrs::dispatcher::extra::dispatcher_client {
+    pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
   public:
     components_manager(const components_manager&) = delete;
 
     explicit components_manager(runner& runner)
-        : dispatcher_client(),
-          runner_(runner),
-          client_(std::make_shared<core_service_daemon_client>()),
-          process_pending_task_(*this) {
-      runner_.set_components_manager(this);
+        : runner_(runner),
+          client_(std::make_shared<core_service_daemon_client>()) {
+      dispatcher_client_constructor_guard_.initialize(
+          [&] {
+            client_->connected.connect([this] {
+              connected_ = true;
+              schedule_process_pending_task(std::chrono::milliseconds(0));
+            });
 
-      client_->connected.connect([this] {
-        connected_ = true;
-        schedule_process_pending_task(std::chrono::milliseconds(0));
-      });
+            client_->connect_failed.connect([this](auto&&) {
+              connected_ = false;
+              request_failed_ = true;
 
-      client_->connect_failed.connect([this](auto&&) {
-        connected_ = false;
-        request_failed_ = true;
+              // If EOF was enqueued before the connection failure was reported,
+              // process it now so that the command does not wait for a reconnect.
+              schedule_process_pending_task(std::chrono::milliseconds(0));
+            });
 
-        // If EOF was enqueued before the connection failure was reported,
-        // process it now so that the command does not wait for a reconnect.
-        schedule_process_pending_task(std::chrono::milliseconds(0));
-      });
+            client_->closed.connect([this] {
+              connected_ = false;
+              request_failed_ = true;
 
-      client_->closed.connect([this] {
-        connected_ = false;
-        request_failed_ = true;
+              // If EOF was enqueued before the disconnection was reported, process
+              // it now so that the command does not wait for a reconnect.
+              schedule_process_pending_task(std::chrono::milliseconds(0));
+            });
 
-        // If EOF was enqueued before the disconnection was reported, process
-        // it now so that the command does not wait for a reconnect.
-        schedule_process_pending_task(std::chrono::milliseconds(0));
-      });
+            runner_.set_components_manager(this);
+          });
     }
 
     ~components_manager() override {
@@ -164,12 +170,14 @@ private:
 
     runner& runner_;
     std::shared_ptr<core_service_daemon_client> client_;
-    pqrs::dispatcher::extra::debounced_task process_pending_task_;
     std::optional<nlohmann::json> request_variables_;
     bool request_in_flight_{false};
     bool request_failed_{false};
     bool connected_{false};
     std::shared_ptr<int> callback_lifetime_{std::make_shared<int>(0)};
+
+    // Construct after potentially throwing members; destruction requires detach.
+    pqrs::dispatcher::extra::debounced_task process_pending_task_{*this};
   };
 
   void set_components_manager(components_manager* manager) {

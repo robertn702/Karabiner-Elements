@@ -6,6 +6,7 @@
 #include "run_loop_thread_utility.hpp"
 #include <atomic>
 #include <memory>
+#include <pqrs/dispatcher.hpp>
 
 namespace {
 std::atomic<krbn_core_service_connected_changed_callback> connected_changed_callback;
@@ -18,26 +19,32 @@ void notify_connected_changed(bool value) {
 }
 
 class components_manager final : public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   components_manager(const components_manager&) = delete;
 
-  components_manager()
-      : dispatcher_client() {
-    client_ = std::make_shared<krbn::core_service_daemon_client>();
-    std::atomic_store(&core_service_daemon_client, client_);
+  components_manager() {
+    dispatcher_client_constructor_guard_.initialize(
+        [&] {
+          client_ = std::make_shared<krbn::core_service_daemon_client>();
 
-    client_->connected.connect([this] {
-      client_->async_connect_multitouch_extension();
-      notify_connected_changed(true);
-    });
+          client_->connected.connect([this] {
+            client_->async_connect_multitouch_extension();
+            notify_connected_changed(true);
+          });
 
-    client_->connect_failed.connect([](auto&&) {
-      notify_connected_changed(false);
-    });
+          client_->connect_failed.connect([](auto&&) {
+            notify_connected_changed(false);
+          });
 
-    client_->closed.connect([] {
-      notify_connected_changed(false);
-    });
+          client_->closed.connect([] {
+            notify_connected_changed(false);
+          });
+
+          std::atomic_store(&core_service_daemon_client,
+                            client_);
+        });
   }
 
   ~components_manager() override {

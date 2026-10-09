@@ -10,10 +10,13 @@
 #include <filesystem>
 #include <nod/nod.hpp>
 #include <optional>
+#include <pqrs/dispatcher.hpp>
 #include <pqrs/osx/file_monitor.hpp>
 
 namespace krbn {
 class configuration_monitor final : public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   // Signals (invoked from the shared dispatcher thread)
 
@@ -27,50 +30,54 @@ public:
                         uid_t expected_user_core_configuration_file_owner,
                         core_configuration::error_handling error_handling,
                         const std::string& system_core_configuration_file_path = constants::get_system_core_configuration_file_path())
-      : dispatcher_client(),
-        user_core_configuration_file_path_(user_core_configuration_file_path),
+      : user_core_configuration_file_path_(user_core_configuration_file_path),
         expected_user_core_configuration_file_owner_(expected_user_core_configuration_file_owner),
         error_handling_(error_handling),
-        system_core_configuration_file_path_(system_core_configuration_file_path),
-        file_removal_task_(*this) {
-    std::vector<std::string> targets;
-    if (user_core_configuration_file_path_) {
-      targets.push_back(*user_core_configuration_file_path_);
-    }
-    targets.push_back(system_core_configuration_file_path_);
+        system_core_configuration_file_path_(system_core_configuration_file_path) {
+    dispatcher_client_constructor_guard_.initialize(
+        [&] {
+          std::vector<std::string> targets;
+          if (user_core_configuration_file_path_) {
+            targets.push_back(*user_core_configuration_file_path_);
+          }
+          targets.push_back(system_core_configuration_file_path_);
 
-    file_monitor_ = std::make_unique<pqrs::osx::file_monitor>(weak_dispatcher_,
-                                                              targets);
+          file_monitor_ = std::make_unique<pqrs::osx::file_monitor>(weak_dispatcher_,
+                                                                    pqrs::osx::file_monitor::parameters{
+                                                                        .files = targets,
+                                                                        .max_file_size = core_configuration::core_configuration::max_configuration_file_size,
+                                                                    });
 
-    file_monitor_->file_changed.connect([this](auto&& changed_file_path,
-                                               auto&& changed_file_body) {
-      // A non-null body means that a readable file is available, so it can be processed immediately.
-      // Before the initial load state is known, a null body represents the initial missing or
-      // unreadable state rather than removal of a previously loaded file, so process that immediately too.
-      if (changed_file_body || !load_state_) {
-        file_removal_task_.cancel();
-        handle_file_changed(changed_file_path);
-      } else {
-        //
-        // Handle the case where a configuration file disappears after it has been loaded once.
-        //
-
-        if (user_core_configuration_file_path_ &&
-            changed_file_path == system_core_configuration_file_path_ &&
-            path_may_exist(*user_core_configuration_file_path_)) {
-          // The system configuration is not active while the user configuration exists.
-          return;
-        }
-
-        // Editors may replace a file by removing and recreating it. Wait briefly before treating
-        // the removal as final so clients do not observe a transient default configuration.
-        file_removal_task_.debounce_after(
-            [this, changed_file_path] {
+          file_monitor_->file_changed.connect([this](auto&& changed_file_path,
+                                                     auto&& changed_file_body) {
+            // A non-null body means that a readable file is available, so it can be processed immediately.
+            // Before the initial load state is known, a null body represents the initial missing or
+            // unreadable state rather than removal of a previously loaded file, so process that immediately too.
+            if (changed_file_body || !load_state_) {
+              file_removal_task_.cancel();
               handle_file_changed(changed_file_path);
-            },
-            file_removal_delay);
-      }
-    });
+            } else {
+              //
+              // Handle the case where a configuration file disappears after it has been loaded once.
+              //
+
+              if (user_core_configuration_file_path_ &&
+                  changed_file_path == system_core_configuration_file_path_ &&
+                  path_may_exist(*user_core_configuration_file_path_)) {
+                // The system configuration is not active while the user configuration exists.
+                return;
+              }
+
+              // Editors may replace a file by removing and recreating it. Wait briefly before treating
+              // the removal as final so clients do not observe a transient default configuration.
+              file_removal_task_.debounce_after(
+                  [this, changed_file_path] {
+                    handle_file_changed(changed_file_path);
+                  },
+                  file_removal_delay);
+            }
+          });
+        });
   }
 
   ~configuration_monitor() override {
@@ -175,9 +182,11 @@ private:
   const std::string system_core_configuration_file_path_;
 
   std::unique_ptr<pqrs::osx::file_monitor> file_monitor_;
-  pqrs::dispatcher::extra::debounced_task file_removal_task_;
   std::shared_ptr<core_configuration::core_configuration> core_configuration_;
   std::optional<core_configuration::core_configuration::load_state> load_state_;
   std::string parse_error_message_;
+
+  // Construct after potentially throwing members; destruction requires detach.
+  pqrs::dispatcher::extra::debounced_task file_removal_task_{*this};
 };
 } // namespace krbn

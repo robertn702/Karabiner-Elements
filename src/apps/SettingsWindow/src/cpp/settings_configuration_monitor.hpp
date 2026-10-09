@@ -4,20 +4,28 @@
 #include "json_utility.hpp"
 #include "monitor/configuration_monitor.hpp"
 #include "settings.hpp"
-#include "settings_configuration_snapshot.hpp"
-#include "settings_remembered_device_properties.hpp"
+#include "settings_configuration_store.hpp"
 #include <mutex>
+#include <pqrs/dispatcher.hpp>
 
 class settings_configuration_monitor final : public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   settings_configuration_monitor(const settings_configuration_monitor&) = delete;
 
   settings_configuration_monitor(
       krbn_core_configuration_updated_t callback,
       krbn_core_configuration_load_state_changed_t load_state_changed_callback)
-      : dispatcher_client(),
-        callback_(callback),
+      : configuration_store_(std::make_shared<settings_configuration_store>(
+            settings_configuration_store::callbacks{
+                .updated = [callback](const auto& value) {
+                  auto json = krbn::json_utility::dump(value);
+                  callback(json.data(), json.size()); },
+                .save = [](auto& configuration) { configuration.sync_save_to_file(); },
+            })),
         load_state_changed_callback_(load_state_changed_callback) {
+    dispatcher_client_constructor_guard_.initialize();
   }
 
   ~settings_configuration_monitor() override {
@@ -43,17 +51,16 @@ public:
         krbn::core_configuration::error_handling::loose);
 
     monitor_->core_configuration_updated.connect([this](auto&& weak_core_configuration) {
-      {
-        std::lock_guard<std::mutex> lock(core_configuration_mutex_);
-        weak_core_configuration_ = weak_core_configuration;
-      }
-
       if (auto core_configuration = weak_core_configuration.lock()) {
-        invoke_callback(*core_configuration);
+        configuration_store_->update(std::move(core_configuration));
       }
     });
 
     monitor_->load_state_changed.connect([this](auto load_state) {
+      if (load_state != krbn::core_configuration::core_configuration::load_state::loaded) {
+        configuration_store_->suspend_configuration();
+      }
+      // A successful load becomes writable only when update supplies its configuration.
       switch (load_state) {
         case krbn::core_configuration::core_configuration::load_state::loaded:
           load_state_changed_callback_(krbn_core_configuration_load_state_loaded);
@@ -74,36 +81,21 @@ public:
   }
 
   void stop() {
+    configuration_store_->stop();
     monitor_ = nullptr;
   }
 
-  [[nodiscard]] std::weak_ptr<krbn::core_configuration::core_configuration> get_weak_core_configuration() const {
-    std::lock_guard<std::mutex> lock(core_configuration_mutex_);
-    return weak_core_configuration_;
+  [[nodiscard]] pqrs::not_null_shared_ptr_t<settings_configuration_store> get_configuration_store() const {
+    return configuration_store_;
   }
 
   void remember_connected_devices(const krbn::connected_devices& connected_devices) {
-    // The process-wide singleton retains device properties for disconnected devices
-    // while this monitor is destroyed and recreated across sleep and wake.
-    if (settings_remembered_device_properties::get_instance().remember_connected_devices(connected_devices)) {
-      if (auto core_configuration = get_weak_core_configuration().lock()) {
-        invoke_callback(*core_configuration);
-      }
-    }
+    configuration_store_->set_connected_devices(connected_devices);
   }
 
 private:
-  void invoke_callback(const krbn::core_configuration::core_configuration& core_configuration) const {
-    auto json = krbn::json_utility::dump(
-        settings_configuration_snapshot(core_configuration)
-            .to_json());
-    callback_(json.data(), json.size());
-  }
-
   std::unique_ptr<krbn::configuration_monitor> monitor_;
-  mutable std::mutex core_configuration_mutex_;
-  std::weak_ptr<krbn::core_configuration::core_configuration> weak_core_configuration_;
-  const krbn_core_configuration_updated_t callback_;
+  pqrs::not_null_shared_ptr_t<settings_configuration_store> configuration_store_;
   const krbn_core_configuration_load_state_changed_t load_state_changed_callback_;
   std::once_flag unregister_callbacks_and_detach_once_;
 };

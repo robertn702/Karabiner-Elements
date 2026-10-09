@@ -16,7 +16,8 @@ struct VariablesView: View {
               ])
             },
             label: {
-              Label("Copy to pasteboard", systemImage: "arrow.right.doc.on.clipboard")
+              AppLocalizedConstrainedLabel(
+                "shared.action.copy_to_pasteboard", systemImage: "arrow.right.doc.on.clipboard")
             })
 
           Button(
@@ -24,7 +25,7 @@ struct VariablesView: View {
               krbn_core_service_async_clear_user_variables()
             },
             label: {
-              Label("Clear user variables", systemImage: "clear")
+              AppLocalizedConstrainedLabel("event_viewer.variables.clear", systemImage: "clear")
             })
         }
       }

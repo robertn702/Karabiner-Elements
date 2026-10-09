@@ -47,9 +47,6 @@ NLOHMANN_JSON_SERIALIZE_ENUM(
 
 class settings_window_guidance_context final {
 public:
-  settings_window_guidance_context() {
-  }
-
   [[nodiscard]] const std::optional<bool>& get_core_daemons_enabled() const {
     return core_daemons_enabled_;
   }
@@ -118,13 +115,11 @@ private:
 };
 
 inline void to_json(nlohmann::json& json, const settings_window_guidance_context& value) {
+  // Enabled state and aggregate status are used internally to choose guidance.
+  // Settings only needs individual running states for the stopped-services alert.
   json = nlohmann::json::object({
-      {"core_daemons_enabled", value.get_core_daemons_enabled()},
-      {"core_agents_enabled", value.get_core_agents_enabled()},
       {"core_daemons_running", value.get_core_daemons_running()},
       {"core_agents_running", value.get_core_agents_running()},
-      {"services_enabled", value.services_enabled()},
-      {"services_running", value.services_running()},
   });
 }
 
@@ -136,10 +131,9 @@ inline void from_json(const nlohmann::json& json, settings_window_guidance_conte
     return json.at(key).get<bool>();
   };
 
-  value.set_core_daemons_enabled(get_optional_bool(json,
-                                                   "core_daemons_enabled"));
-  value.set_core_agents_enabled(get_optional_bool(json,
-                                                  "core_agents_enabled"));
+  // Enabled state is internal and is not restored from the wire format.
+  value.set_core_daemons_enabled(std::nullopt);
+  value.set_core_agents_enabled(std::nullopt);
   value.set_core_daemons_running(get_optional_bool(json,
                                                    "core_daemons_running"));
   value.set_core_agents_running(get_optional_bool(json,
@@ -148,11 +142,6 @@ inline void from_json(const nlohmann::json& json, settings_window_guidance_conte
 
 class settings_window_guidance_state final {
 public:
-  settings_window_guidance_state()
-      : current_setup_(settings_window_guidance_setup::none),
-        current_alert_(settings_window_guidance_alert::none) {
-  }
-
   [[nodiscard]] settings_window_guidance_setup get_current_setup() const {
     return current_setup_;
   }
@@ -194,8 +183,8 @@ public:
   }
 
 private:
-  settings_window_guidance_setup current_setup_;
-  settings_window_guidance_alert current_alert_;
+  settings_window_guidance_setup current_setup_{settings_window_guidance_setup::none};
+  settings_window_guidance_alert current_alert_{settings_window_guidance_alert::none};
   settings_window_guidance_context guidance_context_;
   core_service_daemon_state core_service_daemon_state_;
   // nullopt means that the initial configuration load has not completed yet.

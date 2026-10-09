@@ -1,0 +1,142 @@
+{
+    "settings.complex_modifications.add_predefined": {
+        "en": "Add predefined rule"
+        ,"ja": "定義済みのルールを追加"
+    },
+    "settings.complex_modifications.add_rule": {
+        "en": "Add your own rule"
+        ,"ja": "自分でルールを作成"
+    },
+    "settings.complex_modifications.add_script": {
+        "en": "Add your own rule using JavaScript"
+        ,"ja": "JavaScriptでルールを作成"
+    },
+    "settings.complex_modifications.assets.imported_at": {
+        "en": "Imported at {date}"
+        ,"ja": "取り込み日時: {date}"
+    },
+    "settings.complex_modifications.assets.more_rules": {
+        "en": "Import more rules from the Internet (Open a web browser)"
+        ,"ja": "インターネットからほかのルールを取り込む（Webブラウザーを開く）"
+    },
+    "settings.complex_modifications.disabled": {
+        "en": "disabled"
+        ,"ja": "無効"
+    },
+    "settings.complex_modifications.editor.choose": {
+        "en": "Choose"
+        ,"ja": "選択"
+    },
+    "settings.complex_modifications.editor.choose_editor": {
+        "en": "Choose editor"
+        ,"ja": "エディターを選択"
+    },
+    "settings.complex_modifications.editor.content_too_large": {
+        "en": "Content is too large to edit. Please edit karabiner.json directly with your favorite editor."
+        ,"ja": "内容が大きすぎるため編集できません。お好みのエディターでkarabiner.jsonを直接編集してください。"
+    },
+    "settings.complex_modifications.editor.external_sync_hint": {
+        "en": "Changes saved in the external editor are automatically reflected while this window is open."
+        ,"ja": "このウィンドウを開いている間は、外部エディターで保存した変更が自動的に反映されます。"
+    },
+    "settings.complex_modifications.editor.log": {
+        "en": "Log"
+        ,"ja": "ログ"
+    },
+    "settings.complex_modifications.editor.new_rule_hint": {
+        "en": "Edit the JSON content and press the Save button."
+        ,"ja": "JSONの内容を編集して保存ボタンを押してください。"
+    },
+    "settings.complex_modifications.editor.new_script_hint": {
+        "en": "Edit the script content and press the Save button."
+        ,"ja": "スクリプトの内容を編集して保存ボタンを押してください。"
+    },
+    "settings.complex_modifications.editor.no_log": {
+        "en": "(no log output)"
+        ,"ja": "（ログ出力なし）"
+    },
+    "settings.complex_modifications.editor.open_external": {
+        "en": "Open in external editor"
+        ,"ja": "外部エディターで開く"
+    },
+    "settings.complex_modifications.editor.open_named": {
+        "en": "Open in {name}"
+        ,"ja": "{name}で開く"
+    },
+    "settings.complex_modifications.editor.profile_changed": {
+        "en": "The editor was closed because the profile changed."
+        ,"ja": "プロファイルが変更されたため、エディターを閉じました。"
+    },
+    "settings.complex_modifications.editor.result": {
+        "en": "Script execution result"
+        ,"ja": "スクリプトの実行結果"
+    },
+    "settings.complex_modifications.editor.rules_changed": {
+        "en": "The editor was closed because the selected profile or Complex Modifications rules changed."
+        ,"ja": "選択中のプロファイルまたは高度なキー変換のルールが変更されたため、エディターを閉じました。"
+    },
+    "settings.complex_modifications.editor.tmp_directory_error": {
+        "en": "Failed to get user tmp directory."
+        ,"ja": "ユーザーの一時ディレクトリを取得できませんでした。"
+    },
+    "settings.complex_modifications.filter": {
+        "en": "Filter by description or rule content"
+        ,"ja": "説明やルールの内容で絞り込み"
+    },
+    "settings.complex_modifications.for_experts": {
+        "en": "For expert"
+        ,"ja": "エキスパート向け"
+    },
+    "settings.complex_modifications.import.invalid_utf8": {
+        "en": "The downloaded file is not valid UTF-8."
+        ,"ja": "ダウンロードしたファイルは有効なUTF-8ではありません。"
+    },
+    "settings.complex_modifications.import.source": {
+        "en": "Import file from {url}"
+        ,"ja": "{url}からファイルを取り込む"
+    },
+    "settings.complex_modifications.import.unsupported": {
+        "en": "The downloaded file is not supported."
+        ,"ja": "ダウンロードしたファイルはサポートされていません。"
+    },
+    "settings.complex_modifications.move_to_bottom": {
+        "en": "Move item to bottom"
+        ,"ja": "末尾に移動"
+    },
+    "settings.complex_modifications.move_to_top": {
+        "en": "Move item to top"
+        ,"ja": "先頭に移動"
+    },
+    "settings.complex_modifications.parameters.basic": {
+        "en": "type:basic parameters"
+        ,"ja": "basicのパラメーター"
+    },
+    "settings.complex_modifications.parameters.basic.simultaneous_threshold_milliseconds": {
+        "en": "simultaneous_threshold_milliseconds:"
+        ,"ja": "simultaneous_threshold_milliseconds:"
+    },
+    "settings.complex_modifications.parameters.basic.to_delayed_action_delay_milliseconds": {
+        "en": "to_delayed_action_delay_milliseconds:"
+        ,"ja": "to_delayed_action_delay_milliseconds:"
+    },
+    "settings.complex_modifications.parameters.basic.to_if_alone_timeout_milliseconds": {
+        "en": "to_if_alone_timeout_milliseconds:"
+        ,"ja": "to_if_alone_timeout_milliseconds:"
+    },
+    "settings.complex_modifications.parameters.basic.to_if_held_down_threshold_milliseconds": {
+        "en": "to_if_held_down_threshold_milliseconds:"
+        ,"ja": "to_if_held_down_threshold_milliseconds:"
+    },
+    "settings.complex_modifications.parameters.mouse_motion_to_scroll": {
+        "en": "type:mouse_motion_to_scroll parameters"
+        ,"ja": "mouse_motion_to_scrollのパラメーター"
+    },
+    "settings.complex_modifications.parameters.mouse_motion_to_scroll.speed": {
+        "en": "speed:"
+        ,"ja": "speed:"
+    },
+    "settings.complex_modifications.position": {
+        "en": "Position"
+        ,"ja": "位置"
+    }
+}

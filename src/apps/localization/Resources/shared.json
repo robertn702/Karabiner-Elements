@@ -1,0 +1,106 @@
+{
+    "shared.action.add_item": {
+        "en": "Add item"
+        ,"ja": "項目を追加"
+    },
+    "shared.action.cancel": {
+        "en": "Cancel"
+        ,"ja": "キャンセル"
+    },
+    "shared.action.clear": {
+        "en": "Clear"
+        ,"ja": "消去"
+    },
+    "shared.action.copy_to_pasteboard": {
+        "en": "Copy to pasteboard"
+        ,"ja": "クリップボードにコピー"
+    },
+    "shared.action.dismiss": {
+        "en": "Dismiss"
+        ,"ja": "閉じる"
+    },
+    "shared.action.duplicate": {
+        "en": "Duplicate"
+        ,"ja": "複製"
+    },
+    "shared.action.edit": {
+        "en": "Edit"
+        ,"ja": "編集"
+    },
+    "shared.action.enable": {
+        "en": "Enable"
+        ,"ja": "有効にする"
+    },
+    "shared.action.enable_all": {
+        "en": "Enable All"
+        ,"ja": "すべて有効にする"
+    },
+    "shared.action.import": {
+        "en": "Import"
+        ,"ja": "取り込む"
+    },
+    "shared.action.refresh": {
+        "en": "Refresh"
+        ,"ja": "更新"
+    },
+    "shared.action.rename": {
+        "en": "Rename"
+        ,"ja": "名前を変更"
+    },
+    "shared.action.save": {
+        "en": "Save"
+        ,"ja": "保存"
+    },
+    "shared.find": {
+        "en": "Find"
+        ,"ja": "検索"
+    },
+    "shared.find.next": {
+        "en": "Find Next"
+        ,"ja": "次を検索"
+    },
+    "shared.find.previous": {
+        "en": "Find Previous"
+        ,"ja": "前を検索"
+    },
+    "shared.find.show": {
+        "en": "Find…"
+        ,"ja": "検索…"
+    },
+    "shared.language.auto": {
+        "en": "Auto"
+        ,"ja": "自動"
+    },
+    "shared.language.title": {
+        "en": "Language"
+        ,"ja": "言語"
+    },
+    "shared.section.advanced": {
+        "en": "Advanced"
+        ,"ja": "詳細"
+    },
+    "shared.status.loading": {
+        "en": "Loading..."
+        ,"ja": "読み込み中…"
+    },
+    "shared.system_settings.opening": {
+        "en": "Opening System Settings"
+        ,"ja": "システム設定を開いています"
+    },
+    "shared.validation.number_range": {
+        "en": "must be between {lower} and {upper}"
+        ,"ja": "{lower}から{upper}の範囲で入力してください"
+    },
+    "shared.value.off": {
+        "en": "Off"
+        ,"ja": "無効"
+    },
+    "shared.value.on": {
+        "en": "On"
+        ,"ja": "有効"
+    },
+    "shared.value.unknown": {
+        "en": "Unknown"
+        ,"ja": "不明"
+    }
+}

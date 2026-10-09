@@ -4,7 +4,7 @@ struct ActionView: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 24.0) {
-        GroupBox(label: Text("Action")) {
+        GroupBox(label: AppLocalizedText("settings.general.action.title")) {
           VStack(alignment: .leading, spacing: 16) {
             Button(
               action: {
@@ -12,7 +12,8 @@ struct ActionView: View {
                 Relauncher.relaunch()
               },
               label: {
-                Label("Restart Karabiner-Elements", systemImage: "arrow.clockwise")
+                AppLocalizedConstrainedLabel(
+                  "menu_bar_extra.restart", systemImage: "arrow.clockwise")
               })
 
             Button(
@@ -21,7 +22,7 @@ struct ActionView: View {
                 krbn_killall_settings()
               },
               label: {
-                Label("Quit Karabiner-Elements", systemImage: "xmark.rectangle")
+                AppLocalizedConstrainedLabel("menu_bar_extra.quit", systemImage: "xmark.rectangle")
               })
           }
           .padding()

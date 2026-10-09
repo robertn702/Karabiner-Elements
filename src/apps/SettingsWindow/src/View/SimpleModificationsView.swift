@@ -5,23 +5,15 @@ struct SimpleModificationsView: View {
   @ObservedObject private var contentViewStates = ContentViewStates.shared
 
   var body: some View {
-    HSplitView {
+    // The device list is fixed-width; avoid nested split-view size negotiations.
+    HStack(spacing: 0) {
       DeviceSelectorView(selectedDevice: $contentViewStates.simpleModificationsViewSelectedDevice)
-        .frame(minWidth: 250, maxWidth: 250)
+        .frame(width: 250)
+
+      Divider()
 
       SimpleModificationView(
         selectedDevice: contentViewStates.simpleModificationsViewSelectedDevice)
-    }
-    .onAppear {
-      settings.appendSimpleModificationIfEmpty(
-        device: contentViewStates.simpleModificationsViewSelectedDevice)
-    }
-    .onChange(of: contentViewStates.simpleModificationsViewSelectedDevice) { newDevice in
-      settings.appendSimpleModificationIfEmpty(device: newDevice)
-    }
-    .onReceive(NotificationCenter.default.publisher(for: Settings.didConfigurationLoad)) { _ in
-      settings.appendSimpleModificationIfEmpty(
-        device: contentViewStates.simpleModificationsViewSelectedDevice)
     }
   }
 
@@ -54,7 +46,6 @@ struct SimpleModificationsView: View {
                   Settings.shared.updateSimpleModification(
                     index: simpleModification.index,
                     fromJsonString: json,
-                    toJsonString: toEntry.json,
                     device: selectedDevice)
                 },
                 showUnsafe: settings.configuration.globalConfiguration.unsafeUi
@@ -70,7 +61,6 @@ struct SimpleModificationsView: View {
                 action: { json in
                   Settings.shared.updateSimpleModification(
                     index: simpleModification.index,
-                    fromJsonString: fromEntry.json,
                     toJsonString: json,
                     device: selectedDevice)
                 },
@@ -105,7 +95,7 @@ struct SimpleModificationsView: View {
             label: {
               // Use `Image` and `Text` instead of `Label` to set icon color like `Button` in `List`.
               Image(systemName: "plus.circle.fill").foregroundColor(.blue)
-              Text("Add item")
+              AppLocalizedConstrainedText("shared.action.add_item")
             }
           )
           .buttonStyle(.automatic)

@@ -1,24 +1,29 @@
 import SwiftUI
 
 struct SettingsAdvancedView: View {
+  @AppLocalizationContext private var localized
   @ObservedObject private var userSettings = UserSettings.shared
 
   var body: some View {
     VStack(alignment: .leading, spacing: 25.0) {
-      GroupBox(label: Text("Sleep handling")) {
+      GroupBox(label: AppLocalizedText("multitouch_extension.advanced.sleep")) {
         VStack(alignment: .leading, spacing: 30.0) {
           VStack(alignment: .leading) {
             HStack {
               Toggle(isOn: $userSettings.relaunchAfterWakeUpFromSleep) {
-                Text("Relaunch after wake from sleep")
+                AppLocalizedText([
+                  "multitouch_extension.advanced.relaunch",
+                  " ",
+                  .init(
+                    "settings.general.defaults.value",
+                    arguments: ["value": localized("shared.value.on")]),
+                ])
               }
               .switchToggleStyle()
-
-              Text("(Default: on)")
             }
 
             HStack {
-              Text("Wait before relaunch:")
+              AppLocalizedText("multitouch_extension.advanced.relaunch_wait")
 
               IntTextField(
                 value: $userSettings.relaunchWait,
@@ -28,7 +33,8 @@ struct SettingsAdvancedView: View {
               )
               .disabled(!userSettings.relaunchAfterWakeUpFromSleep)
 
-              Text("seconds (Default: 3)")
+              AppLocalizedText("multitouch_extension.units.seconds")
+              AppLocalizedText("settings.general.defaults.value", arguments: ["value": "3"])
             }
           }
         }
@@ -36,11 +42,11 @@ struct SettingsAdvancedView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
       }
 
-      GroupBox(label: Text("Delay")) {
+      GroupBox(label: AppLocalizedText("multitouch_extension.advanced.delay")) {
         VStack(alignment: .leading, spacing: 30.0) {
           VStack(alignment: .leading) {
             HStack {
-              Text("Touch detection delay:")
+              AppLocalizedText("multitouch_extension.advanced.touch_delay")
 
               IntTextField(
                 value: $userSettings.delayBeforeTurnOn,
@@ -48,15 +54,16 @@ struct SettingsAdvancedView: View {
                 step: 100,
                 width: 80)
 
-              Text("milliseconds (Default: 0)")
+              AppLocalizedText("settings.general.units.milliseconds")
+              AppLocalizedText("settings.general.defaults.value", arguments: ["value": "0"])
             }
 
-            Text("(Increasing this value allows you to ignore unintended touch)")
+            AppLocalizedText("multitouch_extension.advanced.touch_hint")
           }
 
           VStack(alignment: .leading) {
             HStack {
-              Text("Release detection delay:")
+              AppLocalizedText("multitouch_extension.advanced.release_delay")
 
               IntTextField(
                 value: $userSettings.delayBeforeTurnOff,
@@ -64,21 +71,22 @@ struct SettingsAdvancedView: View {
                 step: 100,
                 width: 80)
 
-              Text("milliseconds (Default: 0)")
+              AppLocalizedText("settings.general.units.milliseconds")
+              AppLocalizedText("settings.general.defaults.value", arguments: ["value": "0"])
             }
 
-            Text("(Increasing this value allows you to ignore unintended release)")
+            AppLocalizedText("multitouch_extension.advanced.release_hint")
           }
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
       }
 
-      GroupBox(label: Text("Palm detection")) {
+      GroupBox(label: AppLocalizedText("multitouch_extension.advanced.palm")) {
         VStack(alignment: .leading, spacing: 30.0) {
           VStack(alignment: .leading) {
             HStack {
-              Text("Threshold:")
+              AppLocalizedText("multitouch_extension.advanced.touch_size_threshold")
 
               DoubleTextField(
                 value: $userSettings.palmThreshold,
@@ -87,10 +95,10 @@ struct SettingsAdvancedView: View {
                 maximumFractionDigits: 3,
                 width: 80)
 
-              Text("touch size threshold (Default: 2)")
+              AppLocalizedText("settings.general.defaults.value", arguments: ["value": "2"])
             }
 
-            Text("(Increasing this value allows you to ignore unintended palm touches)")
+            AppLocalizedText("multitouch_extension.advanced.palm_hint")
           }
 
         }

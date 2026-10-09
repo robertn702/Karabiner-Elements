@@ -6,55 +6,59 @@
 #include <atomic>
 #include <iostream>
 #include <memory>
+#include <pqrs/dispatcher.hpp>
 #include <pqrs/thread_wait.hpp>
 
 namespace krbn::cli::watch_multitouch_extension_variables {
 class components_manager final : public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   components_manager(const components_manager&) = delete;
 
   explicit components_manager(int interval)
-      : dispatcher_client(),
-        interval_(interval),
-        client_(std::make_unique<core_service_daemon_client>()),
-        timer_(*this) {
-    client_->connected.connect([this] {
-      timer_.start(
-          [this] {
-            client_->async_get_multitouch_extension_variables();
-          },
-          std::chrono::milliseconds(interval_));
-    });
+      : interval_(interval),
+        client_(std::make_unique<core_service_daemon_client>()) {
+    dispatcher_client_constructor_guard_.initialize(
+        [&] {
+          client_->connected.connect([this] {
+            timer_.start(
+                [this] {
+                  client_->async_get_multitouch_extension_variables();
+                },
+                std::chrono::milliseconds(interval_));
+          });
 
-    client_->connect_failed.connect([this](auto&&) {
-      timer_.stop();
-    });
+          client_->connect_failed.connect([this](auto&&) {
+            timer_.stop();
+          });
 
-    client_->closed.connect([this] {
-      timer_.stop();
-    });
+          client_->closed.connect([this] {
+            timer_.stop();
+          });
 
-    client_->received.connect([this](auto&& operation_type,
-                                     auto&& json) {
-      try {
-        switch (operation_type) {
-          case operation_type::multitouch_extension_variables: {
-            auto string = json.at("multitouch_extension_variables").dump();
-            if (output_json_string_ != string) {
-              output_json_string_ = string;
-              std::cout << string << std::endl;
+          client_->received.connect([this](auto&& operation_type,
+                                           auto&& json) {
+            try {
+              switch (operation_type) {
+                case operation_type::multitouch_extension_variables: {
+                  auto string = json.at("multitouch_extension_variables").dump();
+                  if (output_json_string_ != string) {
+                    output_json_string_ = string;
+                    std::cout << string << std::endl;
+                  }
+                  break;
+                }
+
+                default:
+                  break;
+              }
+            } catch (std::exception& e) {
+              std::cerr << "watch-multitouch-extension-variables error:" << std::endl
+                        << e.what() << std::endl;
             }
-            break;
-          }
-
-          default:
-            break;
-        }
-      } catch (std::exception& e) {
-        std::cerr << "watch-multitouch-extension-variables error:" << std::endl
-                  << e.what() << std::endl;
-      }
-    });
+          });
+        });
   }
 
   ~components_manager() override {
@@ -72,7 +76,9 @@ private:
   int interval_;
   std::string output_json_string_;
   std::unique_ptr<core_service_daemon_client> client_;
-  pqrs::dispatcher::extra::timer timer_;
+
+  // Construct after potentially throwing members; destruction requires detach.
+  pqrs::dispatcher::extra::timer timer_{*this};
 };
 inline int run(int interval) {
   auto termination_wait = pqrs::make_thread_wait();

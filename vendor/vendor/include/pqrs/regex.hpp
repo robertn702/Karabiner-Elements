@@ -1,6 +1,6 @@
 #pragma once
 
-// pqrs::regex v1.2.0
+// pqrs::regex v1.3.0
 
 // (C) Copyright Takayama Fumihiko 2025.
 // Distributed under the Boost Software License, Version 1.0.
@@ -14,10 +14,12 @@
 namespace pqrs {
 class regex final {
 public:
+  static constexpr auto default_flags = std::regex_constants::ECMAScript;
+
   regex() = default;
 
   regex(const std::string& s,
-        std::regex_constants::syntax_option_type flags = std::regex_constants::ECMAScript)
+        std::regex_constants::syntax_option_type flags = default_flags)
       : string_(s),
         regex_(s, flags),
         flags_(flags) {
@@ -43,7 +45,7 @@ public:
 private:
   std::string string_;
   std::regex regex_;
-  std::regex_constants::syntax_option_type flags_ = std::regex_constants::ECMAScript;
+  std::regex_constants::syntax_option_type flags_{default_flags};
 };
 
 inline void to_json(nlohmann::json& json, const regex& value) {

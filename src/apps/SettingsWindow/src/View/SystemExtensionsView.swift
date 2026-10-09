@@ -6,7 +6,7 @@ struct SystemExtensionsView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12.0) {
-      GroupBox(label: Text("States")) {
+      GroupBox(label: AppLocalizedText("settings.system_extensions.states")) {
         VStack(alignment: .leading, spacing: 4.0) {
           HStack(alignment: .center, spacing: 12.0) {
             Button(
@@ -16,7 +16,8 @@ struct SystemExtensionsView: View {
                 pboard.writeObjects([systemExtensionsStreamer.text as NSString])
               },
               label: {
-                Label("Copy to pasteboard", systemImage: "arrow.right.doc.on.clipboard")
+                AppLocalizedConstrainedLabel(
+                  "shared.action.copy_to_pasteboard", systemImage: "arrow.right.doc.on.clipboard")
               })
 
             Button(
@@ -24,7 +25,8 @@ struct SystemExtensionsView: View {
                 SystemExtensions.shared.update()
               },
               label: {
-                Label("Refresh", systemImage: "arrow.clockwise.circle")
+                AppLocalizedConstrainedLabel(
+                  "shared.action.refresh", systemImage: "arrow.clockwise.circle")
               })
           }
 
@@ -43,7 +45,7 @@ struct SystemExtensionsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
       }
 
-      GroupBox(label: Text("macOS log messages")) {
+      GroupBox(label: AppLocalizedText("settings.system_extensions.logs")) {
         VStack(alignment: .leading, spacing: 4.0) {
           HStack(alignment: .center, spacing: 12.0) {
             Button(
@@ -53,7 +55,8 @@ struct SystemExtensionsView: View {
                 pboard.writeObjects([sysextdLogStreamer.text as NSString])
               },
               label: {
-                Label("Copy to pasteboard", systemImage: "arrow.right.doc.on.clipboard")
+                AppLocalizedConstrainedLabel(
+                  "shared.action.copy_to_pasteboard", systemImage: "arrow.right.doc.on.clipboard")
               })
 
             Button(
@@ -61,7 +64,8 @@ struct SystemExtensionsView: View {
                 SysextdLogMessages.shared.update()
               },
               label: {
-                Label("Refresh", systemImage: "arrow.clockwise.circle")
+                AppLocalizedConstrainedLabel(
+                  "shared.action.refresh", systemImage: "arrow.clockwise.circle")
               })
           }
 

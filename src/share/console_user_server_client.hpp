@@ -16,6 +16,8 @@
 
 namespace krbn {
 class console_user_server_client final : public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   // Signals (invoked from the shared dispatcher thread)
 
@@ -29,8 +31,8 @@ public:
   console_user_server_client(const console_user_server_client&) = delete;
 
   explicit console_user_server_client(uid_t uid)
-      : dispatcher_client(),
-        uid_(uid) {
+      : uid_(uid) {
+    dispatcher_client_constructor_guard_.initialize();
   }
 
   ~console_user_server_client() override {

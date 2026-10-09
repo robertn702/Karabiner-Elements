@@ -28,6 +28,10 @@ extern char** environ;
 namespace pqrs::process {
 // Capture the data using a signal for commands like top -l that produce output at regular intervals.
 class process final : public dispatcher::extra::dispatcher_client {
+private:
+  // Keep the guard first so member initialization failures also detach.
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_exception_guard_{*this};
+
 public:
   // Signals (invoked from the dispatcher thread)
 
@@ -41,12 +45,8 @@ public:
   process(std::weak_ptr<dispatcher::dispatcher> weak_dispatcher,
           const std::vector<std::string>& argv)
       : dispatcher_client(weak_dispatcher),
-        argv_buffer_(make_argv_buffer(argv)),
-        argv_(make_argv(argv_buffer_)),
-        stdout_pipe_(std::make_unique<pipe>()),
-        stderr_pipe_(std::make_unique<pipe>()),
-        file_actions_(make_file_actions(*stdout_pipe_, *stderr_pipe_)),
-        killed_(false) {
+        argv_buffer_(make_argv_buffer(argv)) {
+    dispatcher_client_constructor_exception_guard_.initialize();
   }
 
   ~process() {
@@ -341,11 +341,13 @@ private:
   }
 
   std::vector<std::vector<char>> argv_buffer_;
-  std::vector<char*> argv_;
 
-  std::unique_ptr<pipe> stdout_pipe_;
-  std::unique_ptr<pipe> stderr_pipe_;
-  std::unique_ptr<file_actions> file_actions_;
+  std::vector<char*> argv_{make_argv(argv_buffer_)};
+
+  std::unique_ptr<pipe> stdout_pipe_{std::make_unique<pipe>()};
+  std::unique_ptr<pipe> stderr_pipe_{std::make_unique<pipe>()};
+  std::unique_ptr<file_actions> file_actions_{make_file_actions(*stdout_pipe_,
+                                                                *stderr_pipe_)};
 
   std::optional<pid_t> pid_;
   mutable std::mutex pid_mutex_;
@@ -353,7 +355,7 @@ private:
   std::shared_ptr<std::thread> thread_;
   mutable std::mutex thread_mutex_;
 
-  std::atomic<bool> killed_;
+  std::atomic<bool> killed_{false};
   std::atomic<bool> run_started_{false};
 };
 } // namespace pqrs::process

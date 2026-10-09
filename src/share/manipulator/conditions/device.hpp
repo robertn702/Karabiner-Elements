@@ -19,8 +19,7 @@ public:
     device_exists_unless,
   };
 
-  device(const nlohmann::json& json) : base(),
-                                       type_(type::device_if) {
+  device(const nlohmann::json& json) {
     pqrs::json::requires_object(json, "json");
 
     for (const auto& [key, value] : json.items()) {
@@ -176,7 +175,8 @@ private:
       }
       if (is_built_in_keyboard) {
         auto c = manipulator_environment.get_core_configuration();
-        if (is_built_in_keyboard != device_utility::determine_is_built_in_keyboard(*c, device_properties)) {
+        auto device = c->get_selected_profile().get_device(device_properties.get_device_identifiers());
+        if (is_built_in_keyboard != device_utility::determine_is_built_in_keyboard(*device, device_properties)) {
           return false;
         }
       }
@@ -259,7 +259,7 @@ private:
     }
   }
 
-  type type_;
+  type type_{type::device_if};
   std::vector<definition> definitions_;
 };
 } // namespace krbn::manipulator::conditions

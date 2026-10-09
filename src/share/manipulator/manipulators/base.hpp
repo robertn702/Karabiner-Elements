@@ -8,8 +8,7 @@
 namespace krbn::manipulator::manipulators {
 class base {
 protected:
-  base() : validity_(validity::valid) {
-  }
+  base() = default;
 
 public:
   virtual ~base() {
@@ -39,6 +38,13 @@ public:
   [[nodiscard]] validity get_validity() const {
     return validity_;
   }
+  // manipulator_manager::invalidate_manipulators calls this with validity::invalid
+  // when replacing existing manipulators, for example after a configuration reload.
+  // Normal event processing in manipulate does not call this setter, even when
+  // input conditions stop matching or modifier keys are released. The manipulator
+  // remains available for later matching input.
+  // This is separate from event_queue::entry::set_validity, which manipulate may
+  // call to mark an input event as consumed.
   virtual void set_validity(validity value) {
     validity_ = value;
   }
@@ -107,7 +113,13 @@ public:
   }
 
 protected:
-  validity validity_;
+  // Invalidation stops new manipulations without immediately destroying state
+  // needed to finish existing ones. For example, if configuration is reloaded
+  // while a key is held, basic rejects new key_down events but retains the state
+  // needed to handle the matching key_up and release its output keys.
+  // manipulator_manager keeps invalid manipulators while active() is true and
+  // removes them once active() becomes false.
+  validity validity_{validity::valid};
   condition_manager condition_manager_;
 };
 } // namespace krbn::manipulator::manipulators

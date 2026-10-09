@@ -1,12 +1,12 @@
 name: Karabiner-Elements
 
 packages:
-  AsyncAlgorithms:
-    url: https://github.com/apple/swift-async-algorithms
-    from: 1.1.1
   CodeEditor:
     url: https://github.com/ZeeZide/CodeEditor
     from: 1.2.6
+
+options:
+  developmentLanguage: en
 
 targets:
   Karabiner-Elements:
@@ -22,6 +22,9 @@ targets:
         - ../../../vendor/duktape-2.7.0/extras/module-node
       OTHER_LDFLAGS:
         - ../../../vendor/duktape-src/build/Release/libduktape.a
+      CLANG_CXX_LANGUAGE_STANDARD: 'c++23'
+      OTHER_CFLAGS: '$(inherited) -Wall -Werror'
+      OTHER_CPLUSPLUSFLAGS: '$(inherited) -Wall -Werror'
       OTHER_SWIFT_FLAGS: '-warnings-as-errors'
       SWIFT_OBJC_BRIDGING_HEADER:
         - src/Bridging-Header.h
@@ -35,14 +38,8 @@ targets:
     deploymentTarget: 13.0
     sources:
       - path: src
-        compilerFlags:
-          - -Wall
-          - -Werror
-          - '-std=c++23'
+      - path: ../localization/swift
       - path: ../share/swift
-        compilerFlags:
-          - -Wall
-          - -Werror
       - path: ../../../vendor/vendor/src/pqrs/osx/process_info
       - path: ../../../vendor/vendor/src/pqrs/osx/workspace
       - path: Resources
@@ -52,6 +49,5 @@ targets:
           - '*.plist.in'
       - path: ../share/Resources/app.icns
     dependencies:
-      - package: AsyncAlgorithms
       - package: CodeEditor
       - sdk: libc++.tbd

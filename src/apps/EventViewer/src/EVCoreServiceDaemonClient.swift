@@ -1,4 +1,3 @@
-import AsyncAlgorithms
 import Combine
 import Foundation
 
@@ -120,7 +119,7 @@ final class EVCoreServiceDaemonClient: ObservableObject {
 
   static let shared = EVCoreServiceDaemonClient()
 
-  private let manipulatorEnvironmentTimer: AsyncTimerSequence<ContinuousClock>
+  private let manipulatorEnvironmentTimer: PeriodicTimer
   private var manipulatorEnvironmentTimerTask: Task<Void, Never>?
   private var manipulatorEnvironmentStartCount = 0
   @Published private(set) var manipulatorEnvironmentText = ""
@@ -131,9 +130,8 @@ final class EVCoreServiceDaemonClient: ObservableObject {
   @Published private(set) var openHIDDeviceIds: Set<UInt64> = []
 
   init() {
-    manipulatorEnvironmentTimer = AsyncTimerSequence(
-      interval: .milliseconds(500),
-      clock: .continuous
+    manipulatorEnvironmentTimer = PeriodicTimer(
+      interval: .milliseconds(500)
     )
   }
 
@@ -165,9 +163,13 @@ final class EVCoreServiceDaemonClient: ObservableObject {
 
   public func setHIDDevice(_ deviceId: UInt64, opened: Bool) {
     if opened {
-      openHIDDeviceIds.insert(deviceId)
+      if !openHIDDeviceIds.contains(deviceId) {
+        openHIDDeviceIds.insert(deviceId)
+      }
     } else {
-      openHIDDeviceIds.remove(deviceId)
+      if openHIDDeviceIds.contains(deviceId) {
+        openHIDDeviceIds.remove(deviceId)
+      }
     }
   }
 
@@ -176,6 +178,8 @@ final class EVCoreServiceDaemonClient: ObservableObject {
   }
 
   public func updateManipulatorEnvironment(_ text: String) {
+    guard manipulatorEnvironmentText != text else { return }
+
     manipulatorEnvironmentText = text
   }
 

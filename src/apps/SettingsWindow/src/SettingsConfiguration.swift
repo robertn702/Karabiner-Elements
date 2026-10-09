@@ -2,6 +2,10 @@ import Foundation
 
 struct SettingsConfiguration: Decodable {
   struct DeviceDefaults: Decodable {
+    let gamePadStickXFormula: String
+    let gamePadStickYFormula: String
+    let gamePadStickVerticalWheelFormula: String
+    let gamePadStickHorizontalWheelFormula: String
     let pointingMotionXyMultiplier: Double
     let pointingMotionWheelsMultiplier: Double
     let gamePadXyStickDeadzone: Double
@@ -15,6 +19,7 @@ struct SettingsConfiguration: Decodable {
   }
 
   struct GlobalConfiguration: Codable {
+    var uiLanguage: String
     enum NotificationWindowPosition: String, Codable {
       case topLeft = "top_left"
       case topRight = "top_right"
@@ -36,6 +41,7 @@ struct SettingsConfiguration: Decodable {
     var showInMenuBar: Bool
     var showProfileNameInMenuBar: Bool
     var showAdditionalMenuItems: Bool
+    var showQuitConfirmationMenu: Bool
     var enableNotificationWindow: Bool
     var notificationWindowPosition: NotificationWindowPosition
     var notificationWindowRespectScreenVisibleFrame: Bool
@@ -183,7 +189,7 @@ struct SettingsConfiguration: Decodable {
     var gamePadStickYFormula: String
     var gamePadStickVerticalWheelFormula: String
     var gamePadStickHorizontalWheelFormula: String
-    let simpleModifications: [SimpleModification]
+    var simpleModifications: [SimpleModification]
     let fnFunctionKeys: [SimpleModification]
 
     var modifyEvents: Bool {
@@ -223,13 +229,29 @@ struct SettingsConfiguration: Decodable {
       set { ignorePointingDeviceEventsByDefault = !newValue }
     }
     var parameters: Parameters
-    let simpleModifications: [SimpleModification]
+    var simpleModifications: [SimpleModification]
     let fnFunctionKeys: [SimpleModification]
     var devices: [String: Device]
     var complexModifications: ComplexModifications
     var virtualHidKeyboard: VirtualHidKeyboard
   }
 
+  // Read-only defaults supplied by the C++ configuration snapshot.
+  struct Defaults: Decodable {
+    let globalConfiguration: GlobalConfiguration
+    let machineSpecific: MachineSpecific
+    let selectedProfile: SelectedProfile
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case defaultConfiguration, deviceDefaults, globalConfiguration, machineSpecific, profiles,
+      selectedProfile
+  }
+
+  let defaultConfiguration: Defaults
+
+  // Computed from the raw current/default snapshots when loading configuration.
+  var changedSettingsJson: String = "{}"
   let deviceDefaults: DeviceDefaults
   var globalConfiguration: GlobalConfiguration
   var machineSpecific: MachineSpecific

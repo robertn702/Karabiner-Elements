@@ -16,6 +16,8 @@ public:
                        error_handling error_handling)
       : json_(json),
         notification_window_colors_(std::make_shared<notification_window_colors>(nlohmann::json::object(), error_handling)) {
+    helper_values_.push_back_value<std::string>("ui_language", ui_language_, "auto");
+
     helper_values_.push_back_value<bool>("check_for_updates",
                                          check_for_updates_,
                                          true);
@@ -31,6 +33,10 @@ public:
     helper_values_.push_back_value<bool>("show_additional_menu_items",
                                          show_additional_menu_items_,
                                          false);
+
+    helper_values_.push_back_value<bool>("show_quit_confirmation_menu",
+                                         show_quit_confirmation_menu_,
+                                         true);
 
     helper_values_.push_back_value<bool>("enable_notification_window",
                                          enable_notification_window_,
@@ -86,6 +92,7 @@ public:
 
     helper_values_.update_value(json_, error_handling);
 
+    set_ui_language(ui_language_);
     set_notification_window_position(notification_window_position_);
     set_notification_window_font_size(notification_window_font_size_);
     set_delay_milliseconds_before_sleep_shortcut(delay_milliseconds_before_sleep_shortcut_);
@@ -97,6 +104,15 @@ public:
     helper_values_.update_json(j);
 
     return j;
+  }
+
+  [[nodiscard]] const std::string& get_ui_language() const {
+    return ui_language_;
+  }
+  void set_ui_language(const std::string& value) {
+    // Supported languages come from the external localization JSON. Preserve
+    // identifiers even when that JSON file is temporarily unavailable or replaced.
+    ui_language_ = value.empty() ? "auto" : value;
   }
 
   [[nodiscard]] const bool& get_check_for_updates() const {
@@ -125,6 +141,13 @@ public:
   }
   void set_show_additional_menu_items(bool value) {
     show_additional_menu_items_ = value;
+  }
+
+  [[nodiscard]] const bool& get_show_quit_confirmation_menu() const {
+    return show_quit_confirmation_menu_;
+  }
+  void set_show_quit_confirmation_menu(bool value) {
+    show_quit_confirmation_menu_ = value;
   }
 
   [[nodiscard]] const bool& get_enable_notification_window() const {
@@ -210,10 +233,12 @@ public:
 
 private:
   nlohmann::json json_;
+  std::string ui_language_;
   bool check_for_updates_;
   bool show_in_menu_bar_;
   bool show_profile_name_in_menu_bar_;
   bool show_additional_menu_items_;
+  bool show_quit_confirmation_menu_;
   bool enable_notification_window_;
   std::string notification_window_position_;
   bool notification_window_respect_screen_visible_frame_;

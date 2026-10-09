@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct DeviceSelectorView: View {
+  @AppLocalizationContext private var localized
   @Binding var selectedDevice: ConnectedDevice?
   @ObservedObject private var connectedDevices = ConnectedDevices.shared
   @ObservedObject private var settings = Settings.shared
@@ -8,7 +9,7 @@ struct DeviceSelectorView: View {
   @State var selected = ConnectedDevice.zero
 
   var body: some View {
-    // Build a combined array with `ConnectedDevice.zero` for "For all devices"
+    // Build a combined array with `ConnectedDevice.zero` for localized("settings.devices.all")
     let filtered = connectedDevices.connectedDevices.filter {
       (settings.deviceConfiguration($0)?.modifyEvents ?? false)
         && !$0.isVirtualDevice
@@ -18,10 +19,10 @@ struct DeviceSelectorView: View {
     List(targets, selection: $selected) { device in
       ConnectedDeviceLabel(
         title: device.index < 0
-          ? "For all devices"
+          ? localized("settings.devices.all")
           : connectedDeviceLabelTitle(
-            productName: device.productName,
-            manufacturerName: device.manufacturerName,
+            productName: device.localizedProductName(localized),
+            manufacturerName: device.localizedManufacturerName(localized),
             vendorId: device.vendorId,
             productId: device.productId,
             deviceAddress: device.deviceAddress
@@ -34,7 +35,10 @@ struct DeviceSelectorView: View {
       )
       .tag(device)
     }
-    .listStyle(.sidebar)
+    // With the device list in an HStack, sidebar styling can leave the previously selected row
+    // bold after switching away and back on macOS 27. Use regular inset-list selection styling.
+    .listStyle(.inset)
+    .modifier(FocusOnClick())
     .onAppear {
       if let selectedDevice = selectedDevice {
         selected = selectedDevice

@@ -19,6 +19,7 @@
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <pqrs/cf/dictionary.hpp>
+#include <pqrs/dispatcher.hpp>
 #include <pqrs/karabiner/driverkit/virtual_hid_device_service.hpp>
 #include <pqrs/osx/system_preferences.hpp>
 #include <string>
@@ -28,15 +29,19 @@ std::shared_ptr<krbn::dispatcher_utility::scoped_dispatcher_manager> scoped_disp
 std::shared_ptr<krbn::run_loop_thread_utility::scoped_run_loop_thread_manager> scoped_run_loop_thread_manager_;
 
 class settings_process_lifecycle_components_manager final : public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   settings_process_lifecycle_components_manager(const settings_process_lifecycle_components_manager&) = delete;
 
   settings_process_lifecycle_components_manager(const settings_components_manager::callbacks& callbacks,
                                                 krbn_components_manager_stopped_t components_manager_stopped_callback)
-      : dispatcher_client(),
-        components_manager_(std::make_shared<settings_components_manager>(callbacks)),
+      : components_manager_(std::make_shared<settings_components_manager>(callbacks)),
         components_manager_stopped_callback_(components_manager_stopped_callback) {
-    settings_cpp::set_components_manager(components_manager_);
+    dispatcher_client_constructor_guard_.initialize(
+        [&] {
+          settings_cpp::set_components_manager(components_manager_);
+        });
   }
 
   ~settings_process_lifecycle_components_manager() override {
@@ -47,10 +52,9 @@ public:
       // its destructor run after components_manager_stopped_callback_.
       settings_cpp::set_components_manager(std::weak_ptr<settings_components_manager>());
 
-      components_manager_->sync_save_core_configuration_if_pending();
       components_manager_->unregister_callbacks_and_detach();
       components_manager_ = nullptr;
-      components_manager_stopped_callback_();
+      components_manager_stopped_callback_(settings_configuration_store::current_revision());
     });
   }
 
@@ -153,8 +157,8 @@ void krbn_services_register_core_agents() {
   krbn::services_utility::register_core_agents();
 }
 
-void krbn_services_bootout_old_agents() {
-  krbn::services_utility::bootout_old_agents();
+void krbn_services_bootout_and_disable_old_agents() {
+  krbn::services_utility::bootout_and_disable_old_agents();
 }
 
 void krbn_services_restart_console_user_server_agent() {
@@ -165,12 +169,18 @@ void krbn_services_unregister_all_agents() {
   krbn::services_utility::unregister_all_agents();
 }
 
-bool krbn_services_daemons_enabled() {
-  return krbn::services_utility::core_daemons_enabled() == true;
+krbn_service_enabled_state krbn_services_daemons_enabled() {
+  if (auto enabled = krbn::services_utility::core_daemons_enabled()) {
+    return *enabled ? krbn_service_enabled_state_enabled : krbn_service_enabled_state_disabled;
+  }
+  return krbn_service_enabled_state_unknown;
 }
 
-bool krbn_services_agents_enabled() {
-  return krbn::services_utility::core_agents_enabled() == true;
+krbn_service_enabled_state krbn_services_agents_enabled() {
+  if (auto enabled = krbn::services_utility::core_agents_enabled()) {
+    return *enabled ? krbn_service_enabled_state_enabled : krbn_service_enabled_state_disabled;
+  }
+  return krbn_service_enabled_state_unknown;
 }
 
 void krbn_updater_check_for_updates_stable_only() {
@@ -272,31 +282,6 @@ void krbn_complex_modifications_assets_file_parse(const char* code,
 
   auto json_string = krbn::json_utility::dump(json);
   output(json_string.data(), json_string.size());
-}
-
-void krbn_complex_modifications_assets_manager_reload(krbn_json_output_callback output) {
-  auto json = nlohmann::json::array();
-
-  if (auto manager = settings_cpp::get_components_manager()) {
-    json = manager->reload_complex_modifications_assets();
-  }
-
-  auto json_string = krbn::json_utility::dump(json);
-  output(json_string.data(), json_string.size());
-}
-
-void krbn_complex_modifications_assets_manager_add_rule_to_core_configuration_selected_profile(size_t file_index,
-                                                                                               size_t index) {
-  if (auto manager = settings_cpp::get_components_manager()) {
-    manager->add_complex_modifications_rule_to_core_configuration_selected_profile(file_index,
-                                                                                   index);
-  }
-}
-
-void krbn_complex_modifications_assets_manager_erase_file(size_t index) {
-  if (auto manager = settings_cpp::get_components_manager()) {
-    manager->erase_complex_modifications_asset_file(index);
-  }
 }
 
 //

@@ -1,9 +1,6 @@
 name: Karabiner-MultitouchExtension
 
 packages:
-  AsyncAlgorithms:
-    url: https://github.com/apple/swift-async-algorithms
-    from: 1.1.1
   SettingsAccess:
     url: https://github.com/orchetect/SettingsAccess
     from: 2.1.0
@@ -20,6 +17,9 @@ targets:
         - ../../../vendor/vendor/include
       HEADER_SEARCH_PATHS:
         - ../../share
+      CLANG_CXX_LANGUAGE_STANDARD: 'c++23'
+      OTHER_CFLAGS: '$(inherited) -Wall -Werror'
+      OTHER_CPLUSPLUSFLAGS: '$(inherited) -Wall -Werror'
       OTHER_SWIFT_FLAGS: '-warnings-as-errors'
       SWIFT_OBJC_BRIDGING_HEADER: src/Bridging-Header.h
       DEAD_CODE_STRIPPING: 'YES'
@@ -29,22 +29,16 @@ targets:
     deploymentTarget: 13.0
     sources:
       - path: src
-        compilerFlags:
-          - -Wall
-          - -Werror
-          - '-std=c++23'
+      - path: ../localization/swift
       - path: ../share/swift/Views
-        compilerFlags:
-          - -Wall
-          - -Werror
       - path: ../share/swift/ApplicationTermination.swift
+      - path: ../share/swift/Concurrency/PeriodicTimer.swift
       - path: Resources
         excludes:
           - .gitignore
           - '*.plist.in'
     dependencies:
       - framework: /System/Library/PrivateFrameworks/MultitouchSupport.framework
-      - package: AsyncAlgorithms
       - package: SettingsAccess
       - sdk: CoreFoundation.framework
       - sdk: IOKit.framework

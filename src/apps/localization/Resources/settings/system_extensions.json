@@ -1,0 +1,10 @@
+{
+    "settings.system_extensions.logs": {
+        "en": "macOS log messages"
+        ,"ja": "macOSのログメッセージ"
+    },
+    "settings.system_extensions.states": {
+        "en": "System extension states"
+        ,"ja": "システム拡張の状態"
+    }
+}

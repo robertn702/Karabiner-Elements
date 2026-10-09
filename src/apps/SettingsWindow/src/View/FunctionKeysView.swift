@@ -14,21 +14,19 @@ struct FunctionKeysView: View {
         // the setting will not be applied correctly.
         // Therefore, instead of changing it directly here, providing a button to open the System Settings.
 
-        HStack {
-          Text("Use all F1, F2, etc. keys as standard function keys:")
-
-          if settingsCoreServiceDaemonClient.useFkeysAsStandardFunctionKeys {
-            Text("On").foregroundColor(.accentColor).bold()
-          } else {
-            Text("Off")
-          }
-        }
+        AppLocalizedText([
+          "settings.function_keys.system_setting",
+          " ",
+          .init(
+            settingsCoreServiceDaemonClient.useFkeysAsStandardFunctionKeys
+              ? "shared.value.on" : "shared.value.off"),
+        ])
 
         OpenSystemSettingsButton(
           url: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension?FunctionKeys",
           label: {
-            Label(
-              "Open System Settings > Function Keys…",
+            AppLocalizedConstrainedLabel(
+              "settings.setup.system_settings.open_function_keys",
               systemImage: "arrow.up.forward.app")
           }
         )
@@ -37,9 +35,12 @@ struct FunctionKeysView: View {
 
       Divider()
 
-      HSplitView {
+      // The device list is fixed-width; avoid nested split-view size negotiations.
+      HStack(spacing: 0) {
         DeviceSelectorView(selectedDevice: $contentViewStates.functionKeysViewSelectedDevice)
-          .frame(minWidth: 250, maxWidth: 250)
+          .frame(width: 250)
+
+        Divider()
 
         FnFunctionKeysView(selectedDevice: contentViewStates.functionKeysViewSelectedDevice)
       }

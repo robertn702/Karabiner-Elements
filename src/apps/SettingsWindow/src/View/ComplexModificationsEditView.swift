@@ -1,9 +1,10 @@
 import AppKit
-import AsyncAlgorithms
 import CodeEditor
 import SwiftUI
 
 struct ComplexModificationsEditView: View {
+  @ObservedObject private var localization = AppLocalization.shared
+  @Environment(\.locale) private var locale
   @Binding var rule: SettingsConfiguration.ComplexModificationsRule?
   @Binding var showing: Bool
   let onEditingCancelledByExternalChange: () -> Void
@@ -12,6 +13,8 @@ struct ComplexModificationsEditView: View {
   @State private var codeString = ""
   @State private var codeType = SettingsConfiguration.ComplexModificationsRule.CodeType.json
   @State private var errorMessage: String?
+  @State private var isSaving = false
+  @State private var saveAgain = false
   @State private var expectedProfileIndex: Int?
   @State private var expectedRules: [SettingsConfiguration.ComplexModificationsRule]?
   @StateObject private var externalEditorController = ExternalEditorController.shared
@@ -22,8 +25,7 @@ struct ComplexModificationsEditView: View {
   @State private var evalResultString = ""
   @State private var evalLogMessages = ""
   @State private var evalErrorMessage: String?
-  @State private var evalContinuation: AsyncStream<String>.Continuation?
-  @State private var evalStreamTask: Task<Void, Never>?
+  @State private var evalTask = DebouncedTask()
 
   var body: some View {
     ZStack(alignment: .topLeading) {
@@ -50,7 +52,7 @@ struct ComplexModificationsEditView: View {
                       onError: { errorMessage = $0 },
                       onReload: {
                         codeString = $0
-                        _ = save()
+                        Task { _ = await save() }
                       }
                     )
 
@@ -58,7 +60,8 @@ struct ComplexModificationsEditView: View {
                   },
                   label: {
                     Label(
-                      externalEditorController.openTitle(), systemImage: "arrow.up.right.square"
+                      externalEditorController.openTitle(locale: locale),
+                      systemImage: "arrow.up.right.square"
                     )
                     .buttonLabelStyle()
                   }
@@ -69,19 +72,23 @@ struct ComplexModificationsEditView: View {
                     externalEditorController.chooseEditor()
                   },
                   label: {
-                    Label("Choose editor", systemImage: "gear")
-                      .buttonLabelStyle()
+                    AppLocalizedConstrainedLabel(
+                      "settings.complex_modifications.editor.choose_editor", systemImage: "gear"
+                    )
+                    .buttonLabelStyle()
                   }
                 )
 
                 Button(
                   action: {
-                    if save() {
-                      showing = false
+                    Task {
+                      if await save() {
+                        showing = false
+                      }
                     }
                   },
                   label: {
-                    Label("Save", systemImage: "checkmark")
+                    AppLocalizedConstrainedLabel("shared.action.save", systemImage: "checkmark")
                       .buttonLabelStyle()
                   }
                 )
@@ -94,8 +101,8 @@ struct ComplexModificationsEditView: View {
           .frame(maxWidth: .infinity, alignment: .leading)
 
           if disabled {
-            Label(
-              "Content is too large to edit. Please edit karabiner.json directly with your favorite editor.",
+            AppLocalizedLabel(
+              "settings.complex_modifications.editor.content_too_large",
               systemImage: ErrorBorder.icon
             )
             .modifier(ErrorBorder())
@@ -116,8 +123,8 @@ struct ComplexModificationsEditView: View {
             if didOpenExternalEditor {
               Label(
                 title: {
-                  Text(
-                    "Changes saved in the external editor are automatically reflected while this window is open."
+                  AppLocalizedText(
+                    "settings.complex_modifications.editor.external_sync_hint"
                   )
                   .textSelection(.enabled)
                 },
@@ -134,7 +141,8 @@ struct ComplexModificationsEditView: View {
                 ? .javascript
                 : .json,
               theme: CodeEditor.ThemeName(
-                rawValue: colorScheme == .dark ? "qtcreator_dark" : "qtcreator_light")
+                rawValue: colorScheme == .dark ? "qtcreator_dark" : "qtcreator_light"),
+              flags: isSaving ? .defaultViewerFlags : .defaultEditorFlags
             )
             .border(Color(NSColor.separatorColor), width: 2)
 
@@ -153,7 +161,7 @@ struct ComplexModificationsEditView: View {
               }
 
               VStack(alignment: .leading, spacing: 6) {
-                Text("Result")
+                AppLocalizedText("settings.complex_modifications.editor.result")
                   .font(.headline)
 
                 ScrollView {
@@ -170,16 +178,22 @@ struct ComplexModificationsEditView: View {
               }
 
               VStack(alignment: .leading, spacing: 6) {
-                Text("Log")
+                AppLocalizedText("settings.complex_modifications.editor.log")
                   .font(.headline)
 
                 ScrollView {
-                  Text(evalLogMessages.isEmpty ? "(no log output)" : evalLogMessages)
-                    .font(.callout)
-                    .monospaced()
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .padding(8)
+                  Group {
+                    if evalLogMessages.isEmpty {
+                      AppLocalizedText("settings.complex_modifications.editor.no_log")
+                    } else {
+                      Text(verbatim: evalLogMessages)
+                    }
+                  }
+                  .font(.callout)
+                  .monospaced()
+                  .textSelection(.enabled)
+                  .frame(maxWidth: .infinity, alignment: .topLeading)
+                  .padding(8)
                 }
                 .frame(maxWidth: .infinity, minHeight: 60, maxHeight: 60)
                 .background(Color(NSColor.textBackgroundColor))
@@ -194,6 +208,7 @@ struct ComplexModificationsEditView: View {
         showing = false
       }
     }
+    .disabled(isSaving)
     .padding()
     .frame(width: 1000, height: 600)
     .onAppear {
@@ -213,49 +228,15 @@ struct ComplexModificationsEditView: View {
 
       externalEditorController.reset()
 
-      if evalContinuation == nil {
-        let stream = AsyncStream<String> { continuation in
-          evalContinuation = continuation
-        }
-
-        evalStreamTask = Task {
-          for await code in stream.debounce(for: .milliseconds(500)) {
-            if Task.isCancelled {
-              break
-            }
-
-            if disabled || codeType != .javascript {
-              await MainActor.run {
-                evalResultString = ""
-                evalLogMessages = ""
-                evalErrorMessage = nil
-              }
-              continue
-            }
-
-            let result = evaluateJavascript(code: code)
-            await MainActor.run {
-              if codeString != code {
-                return
-              }
-
-              evalResultString = result.jsonString
-              evalLogMessages = result.logMessages
-              evalErrorMessage = result.errorMessage
-            }
-          }
-        }
-      }
-
-      evalContinuation?.yield(codeString)
+      scheduleEvaluation()
+    }
+    .onDisappear {
+      evalTask.cancel()
     }
     .onChange(of: showing) { newValue in
       if !newValue {
         externalEditorController.reset()
-        evalContinuation?.finish()
-        evalContinuation = nil
-        evalStreamTask?.cancel()
-        evalStreamTask = nil
+        evalTask.cancel()
       }
     }
     .onChange(of: codeString) { newValue in
@@ -264,38 +245,70 @@ struct ComplexModificationsEditView: View {
         onError: { errorMessage = $0 }
       )
 
-      evalContinuation?.yield(newValue)
+      scheduleEvaluation()
     }
     .onChange(of: codeType) { _ in
-      evalContinuation?.yield(codeString)
+      scheduleEvaluation()
     }
     .onChange(of: monitoredConfiguration) { _ in
       cancelEditingIfTargetChangedExternally()
     }
   }
 
-  private func save() -> Bool {
+  private func scheduleEvaluation() {
+    guard showing else { return }
+    let code = codeString
+    evalTask.schedule(after: .milliseconds(500)) {
+      if disabled || codeType != .javascript {
+        evalResultString = ""
+        evalLogMessages = ""
+        evalErrorMessage = nil
+        return
+      }
+
+      let result = evaluateJavascript(code: code)
+      guard codeString == code else { return }
+      evalResultString = result.jsonString
+      evalLogMessages = result.logMessages
+      evalErrorMessage = result.errorMessage
+    }
+  }
+
+  private func save() async -> Bool {
+    guard !isSaving else {
+      saveAgain = true
+      return false
+    }
     guard editingTargetIsCurrent() else {
       cancelEditingIfTargetChangedExternally()
       return false
     }
 
-    if rule!.index < 0 {
-      errorMessage = settings.pushFrontComplexModificationsRule(
+    isSaving = true
+    defer {
+      isSaving = false
+      if saveAgain {
+        saveAgain = false
+        Task { _ = await save() }
+      }
+    }
+    let index = rule!.index
+    if index < 0 {
+      errorMessage = await settings.pushFrontComplexModificationsRule(
         codeString: codeString,
         codeType: codeType)
       if errorMessage == nil {
         updateEditedRuleAfterSave(index: 0)
-        return true
+        return !saveAgain
       }
     } else {
-      errorMessage = settings.replaceComplexModificationsRule(
-        index: rule!.index,
+      errorMessage = await settings.replaceComplexModificationsRule(
+        index: index,
         codeString: codeString,
         codeType: codeType)
       if errorMessage == nil {
-        updateEditedRuleAfterSave(index: rule!.index)
-        return true
+        updateEditedRuleAfterSave(index: index)
+        return !saveAgain
       }
     }
 
@@ -344,6 +357,7 @@ struct ComplexModificationsEditView: View {
   }
 
   private func cancelEditingIfTargetChangedExternally() {
+    guard !isSaving else { return }
     guard showing, !editingTargetIsCurrent() else {
       return
     }

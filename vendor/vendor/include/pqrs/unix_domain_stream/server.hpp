@@ -34,6 +34,10 @@ namespace impl {
 
 class server_state final : public dispatcher::extra::dispatcher_client,
                            public std::enable_shared_from_this<server_state> {
+private:
+  // Keep the guard first so member initialization failures also detach.
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_exception_guard_{*this};
+
 public:
   nod::signal<void()> bound;
   nod::signal<void(const asio::error_code&)> bind_failed;
@@ -62,13 +66,8 @@ public:
       : dispatcher_client(weak_dispatcher),
         socket_file_path_(socket_file_path),
         options_(options),
-        verify_peer_(verify_peer),
-        notification_scope_(*this),
-        bind_retry_task_(*this),
-        socket_path_health_check_timer_(*this),
-        io_ctx_(runtime::get_io_context()),
-        request_manager_(io_ctx_,
-                         *this) {
+        verify_peer_(verify_peer) {
+    dispatcher_client_constructor_exception_guard_.initialize();
   }
 
   ~server_state() override {
@@ -175,7 +174,7 @@ public:
                      async_request_callback callback) {
     async_request(id,
                   data,
-                  options_.read_timeout,
+                  options_.common_parameters.read_timeout,
                   callback);
   }
 
@@ -534,7 +533,7 @@ private:
 
           bind();
         },
-        impl::normalize_scheduling_interval(options_.bind_retry_interval));
+        impl::normalize_scheduling_interval(options_.server_parameters.bind_retry_interval));
   }
 
   // This method is executed in the dispatcher thread.
@@ -547,7 +546,7 @@ private:
         [this] {
           socket_path_health_check();
         },
-        impl::normalize_scheduling_interval(options_.socket_path_health_check_interval));
+        impl::normalize_scheduling_interval(options_.server_parameters.socket_path_health_check_interval));
   }
 
   // This method is executed in the dispatcher thread.
@@ -582,7 +581,7 @@ private:
 
           not_null_shared_ptr_t<asio::local::stream_protocol::socket> socket(std::make_shared<asio::local::stream_protocol::socket>(self->io_ctx_));
 
-          timeout->expires_after(self->options_.socket_path_health_check_timeout);
+          timeout->expires_after(self->options_.server_parameters.socket_path_health_check_timeout);
           timeout->async_wait([self, socket, timeout, notification_token](const auto& error_code) {
             // Cancellation must also close a probe whose connect is still pending.
             asio::error_code close_error_code;
@@ -755,7 +754,7 @@ private:
                                    timeout,
                                    callback,
                                    [this, peer_id_value] {
-                                     if (options_.invalidate_connection_on_request_error) {
+                                     if (options_.common_parameters.invalidate_connection_on_request_error) {
                                        close_peer(peer_id_value);
                                      }
                                    });
@@ -767,12 +766,11 @@ private:
   std::filesystem::path socket_file_path_;
   server_options options_;
   std::function<bool(const peer_credentials&)> verify_peer_;
-  notification_scope notification_scope_;
-  dispatcher::extra::debounced_task bind_retry_task_;
-  dispatcher::extra::timer socket_path_health_check_timer_;
 
-  asio::io_context& io_ctx_;
-  request_manager request_manager_;
+  notification_scope notification_scope_{*this};
+  asio::io_context& io_ctx_{runtime::get_io_context()};
+  request_manager request_manager_{io_ctx_,
+                                   *this};
   std::unique_ptr<asio::local::stream_protocol::acceptor> acceptor_;
   // Remember the absolute path resolved when the socket file was created.
   // If a symlink in an intermediate directory changes while the server is
@@ -785,8 +783,12 @@ private:
   // The active timer also identifies the individual probe on the I/O thread.
   // Late callbacks from a completed probe must not affect its successor.
   std::shared_ptr<asio::steady_timer> socket_path_health_check_timeout_;
-  peer_id next_peer_id_ = 0;
-  std::atomic_bool shutdown_started_ = false;
+  peer_id next_peer_id_{0};
+  std::atomic_bool shutdown_started_{false};
+
+  // Construct after potentially throwing members; destruction requires detach.
+  dispatcher::extra::debounced_task bind_retry_task_{*this};
+  dispatcher::extra::timer socket_path_health_check_timer_{*this};
 };
 
 } // namespace impl
@@ -795,6 +797,9 @@ private:
 // I/O thread while server_state remains alive until queued shutdown work ends.
 class server final : public dispatcher::extra::dispatcher_client {
 private:
+  // Keep the guard first so member initialization failures also detach.
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_exception_guard_{*this};
+
   // This member must be declared before the signal references below because
   // members are initialized in declaration order.
   not_null_shared_ptr_t<impl::server_state> state_;
@@ -833,6 +838,7 @@ public:
         peer_error_occurred(state_->peer_error_occurred),
         received(state_->received),
         request_received(state_->request_received) {
+    dispatcher_client_constructor_exception_guard_.initialize();
   }
 
   ~server() override {

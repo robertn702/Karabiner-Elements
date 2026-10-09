@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct DevicesMouseSettingsView: View {
+  @AppLocalizationContext private var localized
   let connectedDevice: ConnectedDevice
   @Binding var deviceConfiguration: SettingsConfiguration.Device
   @Binding var showing: Bool
@@ -11,16 +12,16 @@ struct DevicesMouseSettingsView: View {
     ZStack(alignment: .topLeading) {
       VStack(alignment: .leading, spacing: 40.0) {
         Text(
-          "\(connectedDevice.productName) (\(connectedDevice.manufacturerName))"
+          "\(connectedDevice.localizedProductName(localized)) (\(connectedDevice.localizedManufacturerName(localized)))"
         )
         .font(.title)
         .padding(.leading, 40)
         .padding(.top, 20)
 
-        GroupBox(label: Text("Multiplier")) {
+        GroupBox(label: AppLocalizedText("settings.devices.mouse.multiplier")) {
           Grid(alignment: .leadingFirstTextBaseline) {
             GridRow {
-              Text("XY movement multiplier:")
+              AppLocalizedText("settings.devices.mouse.xy_multiplier")
 
               DoubleTextField(
                 value: $deviceConfiguration.pointingMotionXyMultiplier,
@@ -29,13 +30,17 @@ struct DevicesMouseSettingsView: View {
                 maximumFractionDigits: 1,
                 width: 60)
 
-              Text(
-                "(Default: \(String(format: "%.01f)", settings.configuration.deviceDefaults.pointingMotionXyMultiplier))"
-              )
+              AppLocalizedText(
+                "settings.general.defaults.value",
+                arguments: [
+                  "value": String(
+                    format: "%.01f",
+                    settings.configuration.deviceDefaults.pointingMotionXyMultiplier)
+                ])
             }
 
             GridRow {
-              Text("Wheels multiplier:")
+              AppLocalizedText("settings.devices.mouse.wheels_multiplier")
 
               DoubleTextField(
                 value: $deviceConfiguration.pointingMotionWheelsMultiplier,
@@ -44,9 +49,13 @@ struct DevicesMouseSettingsView: View {
                 maximumFractionDigits: 1,
                 width: 60)
 
-              Text(
-                "(Default: \(String(format: "%.01f)", settings.configuration.deviceDefaults.pointingMotionWheelsMultiplier))"
-              )
+              AppLocalizedText(
+                "settings.general.defaults.value",
+                arguments: [
+                  "value": String(
+                    format: "%.01f",
+                    settings.configuration.deviceDefaults.pointingMotionWheelsMultiplier)
+                ])
             }
           }
           .padding()

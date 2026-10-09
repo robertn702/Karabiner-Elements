@@ -42,7 +42,7 @@ private struct ConnectedDevicePayload: Decodable {
 final class ConnectedDevices: ObservableObject {
   static let shared = ConnectedDevices()
 
-  private(set) var connectedDevicesJSONString = ""
+  private var connectedDevicesJSONString = ""
   @Published var connectedDevices: [ConnectedDevice] = []
   @Published var notConnectedConfiguredDevicesCount: UInt64 = 0
 
@@ -66,21 +66,11 @@ final class ConnectedDevices: ObservableObject {
       let payloads = try decoder.decode([ConnectedDevicePayload].self, from: data)
 
       let newConnectedDevices = payloads.enumerated().map { index, payload in
-        var manufacturer = (payload.manufacturer ?? "")
+        let manufacturer = (payload.manufacturer ?? "")
           .replacingOccurrences(of: "[\r\n]", with: " ", options: .regularExpression)
-        if manufacturer.isEmpty {
-          manufacturer = "No manufacturer name"
-        }
 
-        var product = (payload.product ?? "")
+        let product = (payload.product ?? "")
           .replacingOccurrences(of: "[\r\n]", with: " ", options: .regularExpression)
-        if product.isEmpty {
-          if payload.transport == "FIFO" {
-            product = "Apple Internal Keyboard / Trackpad"
-          } else {
-            product = "No product name"
-          }
-        }
 
         return ConnectedDevice(
           id: payload.deviceIdentifiersJsonString,
@@ -99,12 +89,6 @@ final class ConnectedDevices: ObservableObject {
           isBuiltInKeyboard: payload.isBuiltInKeyboard ?? false,
           isAppleDevice: payload.isApple ?? false
         )
-      }
-
-      notConnectedConfiguredDevicesCount = connectedDevicesJSONString.withCString {
-        UInt64(
-          krbn_core_configuration_get_selected_profile_not_connected_configured_devices_count(
-            $0))
       }
 
       connectedDevices = newConnectedDevices

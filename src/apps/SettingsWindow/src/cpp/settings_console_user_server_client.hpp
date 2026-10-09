@@ -6,21 +6,27 @@
 #include <chrono>
 #include <memory>
 #include <mutex>
+#include <pqrs/dispatcher.hpp>
 
 class settings_console_user_server_client final : public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   settings_console_user_server_client(const settings_console_user_server_client&) = delete;
 
   settings_console_user_server_client(uid_t uid,
                                       krbn_console_user_server_client_status_changed_t status_changed_callback,
                                       krbn_console_user_server_client_settings_window_guidance_received_t settings_window_guidance_received_callback)
-      : dispatcher_client(),
-        uid_(uid),
-        connected_(false),
+      : uid_(uid),
         status_changed_callback_(status_changed_callback),
-        settings_window_guidance_received_callback_(settings_window_guidance_received_callback),
-        settings_window_guidance_timer_(*this) {
-    start();
+        settings_window_guidance_received_callback_(settings_window_guidance_received_callback) {
+    dispatcher_client_constructor_guard_.initialize(
+        [&] {
+          start();
+        },
+        [this] {
+          cleanup();
+        });
   }
 
   ~settings_console_user_server_client() override {
@@ -30,17 +36,7 @@ public:
   void unregister_callbacks_and_detach() {
     std::call_once(unregister_callbacks_and_detach_once_, [this] {
       detach_from_dispatcher([this] {
-        settings_window_guidance_timer_.stop();
-
-        auto client = std::atomic_load(&console_user_server_client_);
-        std::atomic_store(&console_user_server_client_,
-                          std::shared_ptr<krbn::console_user_server_client>());
-
-        if (client) {
-          client->unregister_callbacks_and_detach();
-        }
-
-        connected_.store(false);
+        cleanup();
       });
     });
   }
@@ -88,7 +84,8 @@ public:
       }
     });
 
-    std::atomic_store(&console_user_server_client_, client);
+    std::atomic_store(&console_user_server_client_,
+                      client);
   }
 
   void stop() {
@@ -110,6 +107,20 @@ public:
   }
 
 private:
+  void cleanup() {
+    settings_window_guidance_timer_.stop();
+
+    auto client = std::atomic_load(&console_user_server_client_);
+    std::atomic_store(&console_user_server_client_,
+                      std::shared_ptr<krbn::console_user_server_client>());
+
+    if (client) {
+      client->unregister_callbacks_and_detach();
+    }
+
+    connected_.store(false);
+  }
+
   void async_get_settings_window_guidance() const {
     if (auto client = std::atomic_load(&console_user_server_client_)) {
       client->async_get_settings_window_guidance();
@@ -125,9 +136,11 @@ private:
 
   uid_t uid_;
   std::shared_ptr<krbn::console_user_server_client> console_user_server_client_;
-  std::atomic_bool connected_;
+  std::atomic_bool connected_{false};
   const krbn_console_user_server_client_status_changed_t status_changed_callback_;
   const krbn_console_user_server_client_settings_window_guidance_received_t settings_window_guidance_received_callback_;
-  pqrs::dispatcher::extra::timer settings_window_guidance_timer_;
   std::once_flag unregister_callbacks_and_detach_once_;
+
+  // Construct after potentially throwing members; destruction requires detach.
+  pqrs::dispatcher::extra::timer settings_window_guidance_timer_{*this};
 };

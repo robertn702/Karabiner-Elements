@@ -1,6 +1,6 @@
 #pragma once
 
-// pqrs::osx::iokit_service_monitor v6.2.0
+// pqrs::osx::iokit_service_monitor v6.5.0
 
 // (C) Copyright Takayama Fumihiko 2018.
 // Distributed under the Boost Software License, Version 1.0.
@@ -23,6 +23,10 @@
 
 namespace pqrs::osx {
 class iokit_service_monitor final : dispatcher::extra::dispatcher_client {
+private:
+  // Keep the guard first so member initialization failures also detach.
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_exception_guard_{*this};
+
 public:
   // Signals (invoked from the dispatcher thread)
 
@@ -44,9 +48,8 @@ public:
                         CFDictionaryRef _Nonnull matching_dictionary)
       : dispatcher_client(weak_dispatcher),
         run_loop_thread_(run_loop_thread),
-        matching_dictionary_(matching_dictionary),
-        notification_port_(nullptr),
-        scan_timer_(*this) {
+        matching_dictionary_(matching_dictionary) {
+    dispatcher_client_constructor_exception_guard_.initialize();
   }
 
   ~iokit_service_monitor() override {
@@ -307,11 +310,13 @@ private:
   pqrs::not_null_shared_ptr_t<cf::run_loop_thread> run_loop_thread_;
   cf::cf_ptr<CFDictionaryRef> matching_dictionary_;
 
-  IONotificationPortRef _Nullable notification_port_;
+  IONotificationPortRef _Nullable notification_port_{nullptr};
   iokit_iterator matched_notification_;
   iokit_iterator terminated_notification_;
 
-  pqrs::dispatcher::extra::timer scan_timer_;
   std::unordered_set<iokit_registry_entry_id::value_t> registry_entry_ids_;
+
+  // Construct after potentially throwing members; destruction requires detach.
+  pqrs::dispatcher::extra::timer scan_timer_{*this};
 };
 } // namespace pqrs::osx

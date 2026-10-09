@@ -21,6 +21,8 @@
 
 namespace krbn {
 class core_service_daemon_client final : public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   // Signals (invoked from the shared dispatcher thread)
 
@@ -33,8 +35,8 @@ public:
 
   core_service_daemon_client(const core_service_daemon_client&) = delete;
 
-  core_service_daemon_client()
-      : dispatcher_client() {
+  core_service_daemon_client() {
+    dispatcher_client_constructor_guard_.initialize();
   }
 
   ~core_service_daemon_client() override {

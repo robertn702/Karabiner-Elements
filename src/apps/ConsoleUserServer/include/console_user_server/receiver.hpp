@@ -17,83 +17,86 @@
 
 namespace krbn::console_user_server {
 class receiver final : public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   receiver(const receiver&) = delete;
 
   receiver(std::weak_ptr<settings_window_guidance_manager> weak_settings_window_guidance_manager,
            std::weak_ptr<software_function_handler> weak_software_function_handler,
            std::weak_ptr<update_check_scheduler> weak_update_check_scheduler)
-      : dispatcher_client(),
-        weak_settings_window_guidance_manager_(weak_settings_window_guidance_manager),
+      : weak_settings_window_guidance_manager_(weak_settings_window_guidance_manager),
         weak_software_function_handler_(weak_software_function_handler),
         weak_update_check_scheduler_(weak_update_check_scheduler),
         input_source_selector_(std::make_unique<pqrs::osx::input_source_selector::selector>(weak_dispatcher_)),
         shell_command_handler_(std::make_unique<shell_command_handler>()),
         send_user_command_handler_(std::make_unique<send_user_command_handler>()) {
-    auto socket_file_path = console_user_server_socket_file_path();
+    dispatcher_client_constructor_guard_.initialize(
+        [&] {
+          auto socket_file_path = console_user_server_socket_file_path();
 
-    server_ = std::make_unique<pqrs::unix_domain_stream::server>(
-        weak_dispatcher_,
-        socket_file_path,
-        constants::get_unix_domain_stream_server_options(),
-        [](const auto& peer_credentials) {
-          auto result = get_shared_codesign_manager()->same_team_id(peer_credentials.pid);
-          if (!result) {
-            // During an update, retrieving the Team ID may fail, causing an error once.
-            // Since this can occur during normal use, treat it as debug rather than warn.
-            logger::get_logger()->debug("receiver: peer is not code-signed with same Team ID (pid: {0})",
-                                        peer_credentials.pid.value_or(-1));
-          }
-          return result;
+          server_ = std::make_unique<pqrs::unix_domain_stream::server>(
+              weak_dispatcher_,
+              socket_file_path,
+              constants::get_unix_domain_stream_server_options(),
+              [](const auto& peer_credentials) {
+                auto result = get_shared_codesign_manager()->same_team_id(peer_credentials.pid);
+                if (!result) {
+                  // During an update, retrieving the Team ID may fail, causing an error once.
+                  // Since this can occur during normal use, treat it as debug rather than warn.
+                  logger::get_logger()->debug("receiver: peer is not code-signed with same Team ID (pid: {0})",
+                                              peer_credentials.pid.value_or(-1));
+                }
+                return result;
+              });
+
+          server_->bound.connect([socket_file_path] {
+            logger::get_logger()->debug("receiver: bound");
+          });
+
+          server_->bind_failed.connect([](auto&& error_code) {
+            logger::get_logger()->error("receiver: bind_failed: {0}",
+                                        error_code.message());
+          });
+
+          server_->closed.connect([] {
+            logger::get_logger()->debug("receiver: closed");
+          });
+
+          server_->peer_connected.connect([](auto, auto&&) {
+            // Do nothing
+          });
+
+          server_->peer_closed.connect([](auto) {
+            // Do nothing
+          });
+
+          server_->peer_error_occurred.connect([](auto peer_id, auto&& error_code) {
+            logger::get_logger()->debug("receiver: peer_error_occurred ({0}): {1}", peer_id, error_code.message());
+          });
+
+          server_->received.connect([](auto, auto&&) {
+            // Do nothing
+          });
+
+          server_->request_received.connect([this](auto peer_id, auto request_id, auto&& buffer) {
+            handle_request(peer_id,
+                           request_id,
+                           buffer);
+          });
+
+          server_->async_start();
+
+          logger::get_logger()->debug("receiver is initialized");
+        },
+        [this] {
+          cleanup();
         });
-
-    server_->bound.connect([socket_file_path] {
-      logger::get_logger()->debug("receiver: bound");
-    });
-
-    server_->bind_failed.connect([](auto&& error_code) {
-      logger::get_logger()->error("receiver: bind_failed: {0}",
-                                  error_code.message());
-    });
-
-    server_->closed.connect([] {
-      logger::get_logger()->debug("receiver: closed");
-    });
-
-    server_->peer_connected.connect([](auto, auto&&) {
-      // Do nothing
-    });
-
-    server_->peer_closed.connect([](auto) {
-      // Do nothing
-    });
-
-    server_->peer_error_occurred.connect([](auto peer_id, auto&& error_code) {
-      logger::get_logger()->debug("receiver: peer_error_occurred ({0}): {1}", peer_id, error_code.message());
-    });
-
-    server_->received.connect([](auto, auto&&) {
-      // Do nothing
-    });
-
-    server_->request_received.connect([this](auto peer_id, auto request_id, auto&& buffer) {
-      handle_request(peer_id,
-                     request_id,
-                     buffer);
-    });
-
-    server_->async_start();
-
-    logger::get_logger()->debug("receiver is initialized");
   }
 
   ~receiver() override {
     detach_from_dispatcher([this] {
-      input_source_selector_ = nullptr;
-      shell_command_handler_ = nullptr;
-      send_user_command_handler_ = nullptr;
-
-      server_ = nullptr;
+      cleanup();
     });
 
     logger::get_logger()->debug("receiver is terminated");
@@ -166,6 +169,14 @@ public:
   }
 
 private:
+  void cleanup() {
+    input_source_selector_ = nullptr;
+    shell_command_handler_ = nullptr;
+    send_user_command_handler_ = nullptr;
+
+    server_ = nullptr;
+  }
+
   std::filesystem::path console_user_server_socket_file_path() const {
     return constants::get_console_user_server_socket_file_path(geteuid());
   }

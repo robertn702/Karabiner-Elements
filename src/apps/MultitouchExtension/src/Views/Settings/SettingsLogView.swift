@@ -32,17 +32,18 @@ final class VariableUpdateLog: ObservableObject {
 }
 
 struct SettingsLogView: View {
+  @AppLocalizationContext private var localized
   @ObservedObject private var variableUpdateLog = VariableUpdateLog.shared
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       HStack {
-        Text("Variable update requests")
+        AppLocalizedText("multitouch_extension.log.title")
           .font(.headline)
 
         Spacer()
 
-        Button("Clear") {
+        Button(localized("shared.action.clear")) {
           variableUpdateLog.clear()
         }
         .disabled(variableUpdateLog.entries.isEmpty)
@@ -51,7 +52,7 @@ struct SettingsLogView: View {
       Divider()
 
       if variableUpdateLog.entries.isEmpty {
-        Text("No variable updates")
+        AppLocalizedText("multitouch_extension.log.empty")
           .foregroundStyle(.secondary)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
@@ -86,25 +87,40 @@ private enum VariableUpdateLogTableLayout {
 }
 
 private struct VariableUpdateLogTableHeader: View {
+  @AppLocalizationContext private var localized
   var body: some View {
     HStack(alignment: .top, spacing: 0) {
       textTableCell(
-        "Time",
+        localized("multitouch_extension.log.time"),
         width: VariableUpdateLogTableLayout.timeWidth,
         height: VariableUpdateLogTableLayout.headerRowHeight * 3)
 
       VStack(spacing: 0) {
         HStack(spacing: 0) {
-          textTableCell("Finger", width: VariableUpdateLogTableLayout.fingerWidth)
-          textTableCell("Palm", width: VariableUpdateLogTableLayout.palmWidth)
+          textTableCell(
+            localized("multitouch_extension.count.finger"),
+            width: VariableUpdateLogTableLayout.fingerWidth)
+          textTableCell(
+            localized("multitouch_extension.count.palm"),
+            width: VariableUpdateLogTableLayout.palmWidth)
         }
 
         HStack(spacing: 0) {
-          textTableCell("total", width: VariableUpdateLogTableLayout.totalWidth)
-          textTableCell("half", width: VariableUpdateLogTableLayout.halfWidth)
-          textTableCell("quarter", width: VariableUpdateLogTableLayout.quarterWidth)
-          textTableCell("total", width: VariableUpdateLogTableLayout.totalWidth)
-          textTableCell("half", width: VariableUpdateLogTableLayout.halfWidth)
+          textTableCell(
+            localized("multitouch_extension.count.total"),
+            width: VariableUpdateLogTableLayout.totalWidth)
+          textTableCell(
+            localized("multitouch_extension.count.half"),
+            width: VariableUpdateLogTableLayout.halfWidth)
+          textTableCell(
+            localized("multitouch_extension.count.quarter"),
+            width: VariableUpdateLogTableLayout.quarterWidth)
+          textTableCell(
+            localized("multitouch_extension.count.total"),
+            width: VariableUpdateLogTableLayout.totalWidth)
+          textTableCell(
+            localized("multitouch_extension.count.half"),
+            width: VariableUpdateLogTableLayout.halfWidth)
         }
 
         HStack(spacing: 0) {
@@ -120,8 +136,17 @@ private struct VariableUpdateLogTableHeader: View {
   }
 
   private func directionHeaders() -> some View {
-    ForEach(["upper", "lower", "left", "right"], id: \.self) { label in
-      textTableCell(label, width: VariableUpdateLogTableLayout.directionWidth)
+    ForEach(
+      [
+        "multitouch_extension.direction.upper",
+        "multitouch_extension.direction.lower",
+        "multitouch_extension.direction.left",
+        "multitouch_extension.direction.right",
+      ], id: \.self
+    ) { key in
+      textTableCell(
+        localized(key),
+        width: VariableUpdateLogTableLayout.directionWidth)
     }
   }
 }

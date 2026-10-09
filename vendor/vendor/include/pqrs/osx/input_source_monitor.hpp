@@ -1,6 +1,6 @@
 #pragma once
 
-// pqrs::osx::input_source_monitor v1.4.0
+// pqrs::osx::input_source_monitor v1.6.0
 
 // (C) Copyright Takayama Fumihiko 2019.
 // Distributed under the Boost Software License, Version 1.0.
@@ -17,6 +17,10 @@
 
 namespace pqrs::osx {
 class input_source_monitor final : public dispatcher::extra::dispatcher_client {
+private:
+  // Keep the guard first so member initialization failures also detach.
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_exception_guard_{*this};
+
 public:
   // Signals (invoked from the dispatcher thread)
 
@@ -27,8 +31,8 @@ public:
   input_source_monitor(const input_source_monitor&) = delete;
 
   explicit input_source_monitor(std::weak_ptr<dispatcher::dispatcher> weak_dispatcher)
-      : dispatcher_client(std::move(weak_dispatcher)),
-        started_(false) {
+      : dispatcher_client(std::move(weak_dispatcher)) {
+    dispatcher_client_constructor_exception_guard_.initialize();
   }
 
   ~input_source_monitor() override {
@@ -111,7 +115,7 @@ private:
     });
   }
 
-  bool started_;
+  bool started_{false};
   cf::cf_ptr<TISInputSourceRef> last_input_source_;
 };
 } // namespace pqrs::osx

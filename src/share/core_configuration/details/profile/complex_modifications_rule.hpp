@@ -89,16 +89,29 @@ public:
                              pqrs::not_null_shared_ptr_t<const core_configuration::details::complex_modifications_parameters> parameters,
                              error_handling error_handling)
       : json_(json),
-        code_type_(code_type::json) {
-    auto resolved_json = resolve_code(json, error_handling);
+        parameters_(parameters),
+        error_handling_(error_handling) {
 
     helper_values_.push_back_value<bool>("enabled",
                                          enabled_,
                                          true);
 
-    pqrs::json::requires_object(resolved_json, "json");
-
+    pqrs::json::requires_object(json, "json");
     helper_values_.update_value(json, error_handling);
+
+    if (!enabled_ && json.contains("eval_js")) {
+      // Keep the source editable without executing a disabled rule. Generated
+      // metadata and manipulators become available when the rule is enabled.
+      pqrs::json::requires_string(json.at("eval_js"), "`eval_js`");
+      code_type_ = code_type::javascript;
+      code_string_ = json.at("eval_js").get<std::string>();
+      description_ = json.value("description", "JavaScript");
+      append_search_text(description_, search_text_);
+      return;
+    }
+
+    auto resolved_json = resolve_code(json, error_handling);
+    pqrs::json::requires_object(resolved_json, "json");
 
     for (const auto& [key, value] : resolved_json.items()) {
       if (key == "manipulators") {
@@ -189,6 +202,16 @@ public:
   }
 
   void set_enabled(bool value) {
+    if (value && !enabled_ && code_type_ == code_type::javascript && manipulators_.empty()) {
+      auto json = to_json();
+      json["enabled"] = true;
+      // Construct first so a failed evaluation leaves the disabled rule intact.
+      complex_modifications_rule resolved(json, parameters_, error_handling_);
+      manipulators_ = std::move(resolved.manipulators_);
+      description_ = std::move(resolved.description_);
+      description_notes_ = std::move(resolved.description_notes_);
+      search_text_ = std::move(resolved.search_text_);
+    }
     enabled_ = value;
   }
 
@@ -233,7 +256,7 @@ private:
         code_type_ = code_type::javascript;
         code_string_ = value.get<std::string>();
 
-        auto result = krbn::duktape_utility::eval_string_to_json(code_string_);
+        auto result = krbn::duktape_utility::eval_string_to_json(code_string_, false);
         result.json.erase("enabled");
 
         return result.json;
@@ -247,11 +270,13 @@ private:
   }
 
   nlohmann::json json_;
+  pqrs::not_null_shared_ptr_t<const complex_modifications_parameters> parameters_;
+  error_handling error_handling_;
   std::vector<pqrs::not_null_shared_ptr_t<manipulator>> manipulators_;
   bool enabled_;
   std::string description_;
   std::vector<std::string> description_notes_;
-  code_type code_type_;
+  code_type code_type_{code_type::json};
   std::string code_string_;
   // Contains the rule description, description notes, and the JSON representation
   // of each resolved manipulator. Other top-level metadata is intentionally

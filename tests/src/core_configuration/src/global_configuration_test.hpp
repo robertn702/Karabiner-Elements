@@ -11,10 +11,13 @@ void run_global_configuration_test() {
       auto json = nlohmann::json::object();
       krbn::core_configuration::details::global_configuration global_configuration(json,
                                                                                    krbn::core_configuration::error_handling::strict);
+      expect(global_configuration.get_ui_language() == "auto");
+      expect(!global_configuration.to_json().contains("ui_language"));
       expect(global_configuration.get_check_for_updates() == true);
       expect(global_configuration.get_show_in_menu_bar() == true);
       expect(global_configuration.get_show_profile_name_in_menu_bar() == false);
       expect(global_configuration.get_show_additional_menu_items() == false);
+      expect(global_configuration.get_show_quit_confirmation_menu() == true);
       expect(global_configuration.get_enable_notification_window() == true);
       expect(global_configuration.get_notification_window_position() == "bottom_right");
       expect(global_configuration.get_notification_window_respect_screen_visible_frame() == true);
@@ -31,6 +34,20 @@ void run_global_configuration_test() {
       expect(global_configuration.get_delay_milliseconds_before_sleep_shortcut() == 500);
     }
 
+    // Preserve language selections without depending on the installed translations.
+    {
+      krbn::core_configuration::details::global_configuration global_configuration(
+          nlohmann::json({{"ui_language", "unsupported"}}),
+          krbn::core_configuration::error_handling::strict);
+      expect(global_configuration.get_ui_language() == "unsupported");
+      expect(global_configuration.to_json().at("ui_language") == "unsupported");
+
+      // An empty selection restores automatic language selection and is not saved.
+      global_configuration.set_ui_language("");
+      expect(global_configuration.get_ui_language() == "auto");
+      expect(!global_configuration.to_json().contains("ui_language"));
+    }
+
     // load values from json
     {
       nlohmann::json json{
@@ -38,6 +55,7 @@ void run_global_configuration_test() {
           {"show_in_menu_bar", false},
           {"show_profile_name_in_menu_bar", true},
           {"show_additional_menu_items", true},
+          {"show_quit_confirmation_menu", false},
           {"enable_notification_window", false},
           {"notification_window_position", "top_left"},
           {"notification_window_respect_screen_visible_frame", false},
@@ -68,6 +86,8 @@ void run_global_configuration_test() {
       expect(global_configuration.get_show_in_menu_bar() == false);
       expect(global_configuration.get_show_profile_name_in_menu_bar() == true);
       expect(global_configuration.get_show_additional_menu_items() == true);
+      expect(global_configuration.get_show_quit_confirmation_menu() == false);
+      expect(global_configuration.to_json()["show_quit_confirmation_menu"] == false);
       expect(global_configuration.get_enable_notification_window() == false);
       expect(global_configuration.get_notification_window_position() == "top_left");
       expect(global_configuration.get_notification_window_respect_screen_visible_frame() == false);
@@ -92,6 +112,7 @@ void run_global_configuration_test() {
       global_configuration.set_show_in_menu_bar(true);
       global_configuration.set_show_profile_name_in_menu_bar(false);
       global_configuration.set_show_additional_menu_items(false);
+      global_configuration.set_show_quit_confirmation_menu(true);
       global_configuration.set_enable_notification_window(true);
       global_configuration.set_notification_window_position("bottom_right");
       global_configuration.set_notification_window_respect_screen_visible_frame(true);
@@ -117,6 +138,7 @@ void run_global_configuration_test() {
           {"show_in_menu_bar", 0},
           {"show_profile_name_in_menu_bar", nlohmann::json::object()},
           {"show_additional_menu_items", nlohmann::json::object()},
+          {"show_quit_confirmation_menu", nlohmann::json::object()},
           {"enable_notification_window", nlohmann::json::object()},
           {"notification_window_position", nlohmann::json::object()},
           {"notification_window_respect_screen_visible_frame", nlohmann::json::object()},
@@ -135,6 +157,7 @@ void run_global_configuration_test() {
       expect(global_configuration.get_show_in_menu_bar() == true);
       expect(global_configuration.get_show_profile_name_in_menu_bar() == false);
       expect(global_configuration.get_show_additional_menu_items() == false);
+      expect(global_configuration.get_show_quit_confirmation_menu() == true);
       expect(global_configuration.get_enable_notification_window() == true);
       expect(global_configuration.get_notification_window_position() == "bottom_right");
       expect(global_configuration.get_notification_window_respect_screen_visible_frame() == true);

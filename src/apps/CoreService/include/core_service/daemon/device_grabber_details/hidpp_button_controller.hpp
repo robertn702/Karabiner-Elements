@@ -35,6 +35,8 @@ namespace krbn::core_service::daemon::device_grabber_details {
 // next activation.
 //
 class hidpp_button_controller final : public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   //
   // Signals (invoked from the shared dispatcher thread)
@@ -60,6 +62,7 @@ public:
         session_(control_id,
                  next_software_id(),
                  log_prefix) {
+    dispatcher_client_constructor_guard_.initialize([] {});
   }
 
   // This method should be called in the shared dispatcher thread while the device is still opened.

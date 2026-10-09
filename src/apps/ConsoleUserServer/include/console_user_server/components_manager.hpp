@@ -19,7 +19,6 @@
 #include <optional>
 #include <pqrs/dispatcher.hpp>
 #include <pqrs/osx/input_source_monitor.hpp>
-#include <pqrs/osx/json_file_monitor.hpp>
 #include <pqrs/osx/session.hpp>
 #include <pqrs/osx/system_preferences_monitor.hpp>
 #include <sys/stat.h>
@@ -28,13 +27,14 @@
 
 namespace krbn::console_user_server {
 class components_manager final : public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   components_manager(const components_manager&) = delete;
 
   components_manager(std::shared_ptr<ui_bridge> ui_bridge,
                      std::weak_ptr<update_check_scheduler> weak_update_check_scheduler)
-      : dispatcher_client(),
-        console_user_id_changed_client_(std::make_shared<console_user_id_changed_client>()),
+      : console_user_id_changed_client_(std::make_shared<console_user_id_changed_client>()),
         session_monitor_(std::make_unique<pqrs::osx::session::monitor>(weak_dispatcher_)),
         configuration_monitor_(std::make_unique<configuration_monitor>(constants::get_user_core_configuration_file_path().string(),
                                                                        geteuid(),
@@ -46,97 +46,99 @@ public:
         software_function_handler_(std::make_shared<software_function_handler>()),
         weak_update_check_scheduler_(weak_update_check_scheduler),
         ui_bridge_(std::move(ui_bridge)) {
-    configuration_monitor_->core_configuration_updated.connect([this](auto&& weak_core_configuration) {
-      if (auto core_configuration = weak_core_configuration.lock()) {
-        core_configuration_ = core_configuration;
+    dispatcher_client_constructor_guard_.initialize(
+        [&] {
+          configuration_monitor_->core_configuration_updated.connect([this](auto&& weak_core_configuration) {
+            if (auto core_configuration = weak_core_configuration.lock()) {
+              core_configuration_ = core_configuration;
 
-        if (core_configuration->get_machine_specific().get_entry().get_enable_multitouch_extension()) {
-          services_utility::register_multitouch_extension_agent();
-        } else {
-          services_utility::unregister_multitouch_extension_agent();
-        }
+              if (core_configuration->get_machine_specific().get_entry().get_enable_multitouch_extension()) {
+                services_utility::register_multitouch_extension_agent();
+              } else {
+                services_utility::unregister_multitouch_extension_agent();
+              }
 
-        publish_ui_state(core_configuration.get());
-      }
-    });
+              publish_ui_state(core_configuration.get());
+            }
+          });
 
-    configuration_monitor_->load_state_changed.connect([this](auto load_state) {
-      settings_window_guidance_manager_->async_update_console_user_server_karabiner_json_permission_error(
-          load_state == core_configuration::core_configuration::load_state::permission_error);
+          configuration_monitor_->load_state_changed.connect([this](auto load_state) {
+            settings_window_guidance_manager_->async_update_console_user_server_karabiner_json_permission_error(
+                load_state == core_configuration::core_configuration::load_state::permission_error);
 
-      if (load_state != core_configuration::core_configuration::load_state::loaded) {
-        core_configuration_ = nullptr;
-        publish_ui_state(nullptr);
-      }
-    });
+            if (load_state != core_configuration::core_configuration::load_state::loaded) {
+              core_configuration_ = nullptr;
+              publish_ui_state(nullptr);
+            }
+          });
 
-    select_profile_connection_ = ui_bridge_->profile_selection_requested.connect([this](auto index) {
-      if (core_configuration_) {
-        core_configuration_->select_profile(index);
-        core_configuration_->sync_save_to_file();
-        publish_ui_state(core_configuration_.get());
-      }
-    });
+          select_profile_connection_ = ui_bridge_->profile_selection_requested.connect([this](auto index) {
+            if (core_configuration_) {
+              core_configuration_->select_profile(index);
+              core_configuration_->sync_save_to_file();
+              publish_ui_state(core_configuration_.get());
+            }
+          });
 
-    //
-    // console_user_id_changed_client_
-    //
+          // Publish the language resolved in the logged-in user's Swift UI process.
+          resolved_ui_language_connection_ = ui_bridge_->resolved_ui_language_changed.connect([this](const auto& language) {
+            if (core_service_daemon_client_) {
+              core_service_daemon_client_->async_set_variables({{"system.ui_language", language}});
+            }
+          });
 
-    console_user_id_changed_client_->connected.connect([this] {
-      if (on_console_) {
-        console_user_id_changed_client_->async_console_user_id_changed(*on_console_);
-      }
-    });
+          //
+          // console_user_id_changed_client_
+          //
 
-    console_user_id_changed_client_->connect_failed.connect([](auto&&) {
-      // Do nothing
-    });
+          console_user_id_changed_client_->connected.connect([this] {
+            if (on_console_) {
+              console_user_id_changed_client_->async_console_user_id_changed(*on_console_);
+            }
+          });
 
-    console_user_id_changed_client_->closed.connect([] {
-      // Do nothing
-    });
+          console_user_id_changed_client_->connect_failed.connect([](auto&&) {
+            // Do nothing
+          });
 
-    console_user_id_changed_client_->core_service_daemon_server_bound.connect([this](auto&& uid) {
-      if (on_console_ == std::optional<bool>(true) &&
-          uid == std::optional<uid_t>(getuid())) {
-        start_core_service_daemon_client();
-      }
-    });
+          console_user_id_changed_client_->closed.connect([] {
+            // Do nothing
+          });
 
-    //
-    // session_monitor_
-    //
+          console_user_id_changed_client_->core_service_daemon_server_bound.connect([this](auto&& uid) {
+            if (on_console_ == std::optional<bool>(true) &&
+                uid == std::optional<uid_t>(getuid())) {
+              start_core_service_daemon_client();
+            }
+          });
 
-    session_monitor_->on_console_changed.connect([this](auto&& on_console) {
-      logger::get_logger()->debug("on_console_changed: on_console:{}", on_console);
+          //
+          // session_monitor_
+          //
 
-      on_console_ = on_console;
+          session_monitor_->on_console_changed.connect([this](auto&& on_console) {
+            logger::get_logger()->debug("on_console_changed: on_console:{}", on_console);
 
-      stop_core_service_daemon_client();
+            on_console_ = on_console;
 
-      console_user_id_changed_client_->async_console_user_id_changed(on_console);
+            stop_core_service_daemon_client();
 
-      // Delay start_core_service_daemon_client until core_service_daemon_server_bound is received.
-      // The core service daemon recreates its receiver socket for the new console user,
-      // so connecting before the socket ownership and permissions are updated may fail.
-    });
+            console_user_id_changed_client_->async_console_user_id_changed(on_console);
+
+            // Delay start_core_service_daemon_client until core_service_daemon_server_bound is received.
+            // The core service daemon recreates its receiver socket for the new console user,
+            // so connecting before the socket ownership and permissions are updated may fail.
+          });
+        },
+        [this] {
+          cleanup();
+        });
   }
 
   ~components_manager() override {
     detach_from_dispatcher([this] {
-      stop_core_service_daemon_client();
+      cleanup();
       publish_ui_state(nullptr);
-
-      receiver_ = nullptr;
-      software_function_handler_ = nullptr;
-      settings_window_guidance_manager_ = nullptr;
-      settings_window_guidance_manager_dispatcher_ = nullptr;
-      settings_window_guidance_manager_dispatcher_time_source_ = nullptr;
-      session_monitor_ = nullptr;
-      select_profile_connection_.disconnect();
-      configuration_monitor_ = nullptr;
-      core_configuration_ = nullptr;
-      console_user_id_changed_client_ = nullptr;
     });
   }
 
@@ -153,6 +155,22 @@ public:
   }
 
 private:
+  void cleanup() {
+    stop_core_service_daemon_client();
+
+    receiver_ = nullptr;
+    software_function_handler_ = nullptr;
+    settings_window_guidance_manager_ = nullptr;
+    settings_window_guidance_manager_dispatcher_ = nullptr;
+    settings_window_guidance_manager_dispatcher_time_source_ = nullptr;
+    session_monitor_ = nullptr;
+    select_profile_connection_.disconnect();
+    resolved_ui_language_connection_.disconnect();
+    configuration_monitor_ = nullptr;
+    core_configuration_ = nullptr;
+    console_user_id_changed_client_ = nullptr;
+  }
+
   void publish_ui_state(const core_configuration::core_configuration* configuration) const {
     const auto configuration_loaded = configuration != nullptr;
     const core_configuration::details::global_configuration default_global_configuration(
@@ -183,6 +201,10 @@ private:
                     configuration_loaded,
                 },
                 {
+                    "uiLanguage",
+                    global_configuration.get_ui_language(),
+                },
+                {
                     "appIconNumber",
                     app_icon(constants::get_system_app_icon_configuration_file_path()).get_number(),
                 },
@@ -192,6 +214,7 @@ private:
                         {"showIcon", configuration_loaded && global_configuration.get_show_in_menu_bar()},
                         {"showProfileName", configuration_loaded && global_configuration.get_show_profile_name_in_menu_bar()},
                         {"showAdditionalMenuItems", configuration_loaded && global_configuration.get_show_additional_menu_items()},
+                        {"showQuitConfirmationMenu", global_configuration.get_show_quit_confirmation_menu()},
                         {"enableMultitouchExtension", configuration && configuration->get_machine_specific().get_entry().get_enable_multitouch_extension()},
                     },
                 },
@@ -239,6 +262,7 @@ private:
 
     core_service_daemon_client_->connected.connect([this] {
       core_service_daemon_client_->async_start_device_grabber(constants::get_user_core_configuration_file_path());
+      core_service_daemon_client_->async_set_variables({{"system.ui_language", ui_bridge_->get_resolved_ui_language()}});
       core_service_daemon_client_->async_observe_notification_message();
 
       stop_child_components();
@@ -346,7 +370,8 @@ private:
   //
 
   std::shared_ptr<ui_bridge> ui_bridge_;
-  // Declare this last so that it is disconnected before the other members are destroyed.
+  // Declare connections last so they are disconnected before the other members are destroyed.
   nod::scoped_connection select_profile_connection_;
+  nod::scoped_connection resolved_ui_language_connection_;
 };
 } // namespace krbn::console_user_server

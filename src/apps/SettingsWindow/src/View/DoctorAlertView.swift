@@ -3,19 +3,30 @@ import SwiftUI
 struct DoctorAlertView: View {
   @ObservedObject private var contentViewStates = ContentViewStates.shared
 
+  let debugParseErrorMessageOverride: String?
+
+  init(debugParseErrorMessageOverride: String? = nil) {
+    self.debugParseErrorMessageOverride = debugParseErrorMessageOverride
+  }
+
+  private var parseErrorMessage: String {
+    debugParseErrorMessageOverride
+      ?? contentViewStates.coreServiceDaemonState.karabinerJsonParseErrorMessage
+  }
+
   var body: some View {
     ZStack(alignment: .topLeading) {
       VStack(alignment: .center, spacing: 20.0) {
-        if !contentViewStates.coreServiceDaemonState.karabinerJsonParseErrorMessage.isEmpty {
-          Label(
-            "karabiner.json couldn't be loaded due to a parse error",
+        if !parseErrorMessage.isEmpty {
+          AppLocalizedLabel(
+            "settings.setup.configuration.parse_error",
             systemImage: ErrorBorder.icon
           )
           .font(.title)
 
-          Text("It looks like the file was edited manually and now contains invalid JSON.")
+          AppLocalizedText("settings.setup.configuration.parse_error_hint")
 
-          Text(contentViewStates.coreServiceDaemonState.karabinerJsonParseErrorMessage)
+          Text(parseErrorMessage)
             .modifier(ErrorBorder())
         }
       }

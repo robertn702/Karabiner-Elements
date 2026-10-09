@@ -13,6 +13,29 @@ public:
   }
 
   [[nodiscard]] nlohmann::json to_json() const {
+    auto snapshot = make_json();
+    krbn::core_configuration::core_configuration default_configuration;
+    auto& default_profile = default_configuration.get_selected_profile();
+    const auto default_ignore_pointing = default_profile.get_ignore_pointing_device_events_by_default();
+    const auto& profile = core_configuration_.get_selected_profile();
+
+    // Device defaults depend on identifiers and the current profile's inherited
+    // ignore setting. Compare the same devices without counting inherited values
+    // as per-device changes. The profile setting itself still uses its factory default.
+    default_profile.set_ignore_pointing_device_events_by_default(profile.get_ignore_pointing_device_events_by_default());
+    for (const auto& device : profile.get_devices()) {
+      static_cast<void>(default_profile.get_device(device->get_identifiers()));
+    }
+    auto defaults = settings_configuration_snapshot(default_configuration).make_json();
+    defaults["selected_profile"]["ignore_pointing_device_events_by_default"] = default_ignore_pointing;
+    snapshot["default_configuration"] = std::move(defaults);
+    return snapshot;
+  }
+
+private:
+  // Shared schema for current and default values. Never use configuration.to_json()
+  // here: it preserves unknown keys, which are not Settings fields.
+  [[nodiscard]] nlohmann::json make_json() const {
     const auto& global = core_configuration_.get_global_configuration();
     const auto& machine_specific = core_configuration_.get_machine_specific().get_entry();
     const auto& selected_profile = core_configuration_.get_selected_profile();
@@ -34,10 +57,12 @@ public:
         {"device_defaults", make_device_defaults_json()},
         {"global_configuration",
          {
+             {"ui_language", global.get_ui_language()},
              {"check_for_updates", global.get_check_for_updates()},
              {"show_in_menu_bar", global.get_show_in_menu_bar()},
              {"show_profile_name_in_menu_bar", global.get_show_profile_name_in_menu_bar()},
              {"show_additional_menu_items", global.get_show_additional_menu_items()},
+             {"show_quit_confirmation_menu", global.get_show_quit_confirmation_menu()},
              {"enable_notification_window", global.get_enable_notification_window()},
              {"notification_window_position", global.get_notification_window_position()},
              {"notification_window_respect_screen_visible_frame", global.get_notification_window_respect_screen_visible_frame()},
@@ -100,11 +125,14 @@ public:
     };
   }
 
-private:
   [[nodiscard]] static nlohmann::json make_device_defaults_json() {
     krbn::core_configuration::details::device device;
 
     return {
+        {"game_pad_stick_x_formula", device.find_default_value(device.get_game_pad_stick_x_formula())},
+        {"game_pad_stick_y_formula", device.find_default_value(device.get_game_pad_stick_y_formula())},
+        {"game_pad_stick_vertical_wheel_formula", device.find_default_value(device.get_game_pad_stick_vertical_wheel_formula())},
+        {"game_pad_stick_horizontal_wheel_formula", device.find_default_value(device.get_game_pad_stick_horizontal_wheel_formula())},
         {"pointing_motion_xy_multiplier", device.find_default_value(device.get_pointing_motion_xy_multiplier())},
         {"pointing_motion_wheels_multiplier", device.find_default_value(device.get_pointing_motion_wheels_multiplier())},
         {"game_pad_xy_stick_deadzone", device.find_default_value(device.get_game_pad_xy_stick_deadzone())},
@@ -168,7 +196,7 @@ private:
       const auto& device = profile.get_device(i);
       auto ignore = device->get_ignore();
       if (device_properties) {
-        ignore = krbn::device_utility::determine_should_ignore_device(core_configuration_,
+        ignore = krbn::device_utility::determine_should_ignore_device(*device,
                                                                       *device_properties);
       }
 

@@ -20,7 +20,7 @@ struct IntTextField: View {
     width: CGFloat
   ) {
     _value = value
-    text = String(value.wrappedValue)
+    _text = State(initialValue: String(value.wrappedValue))
 
     self.step = step
     self.range = range
@@ -53,9 +53,13 @@ struct IntTextField: View {
       }
 
       if error {
-        Label(
-          "must be between \(range.lowerBound) and \(range.upperBound)",
-          systemImage: ErrorBorder.icon
+        AppLocalizedLabel(
+          "shared.validation.number_range",
+          systemImage: ErrorBorder.icon,
+          arguments: [
+            "lower": String(range.lowerBound),
+            "upper": String(range.upperBound),
+          ]
         )
         .modifier(ErrorBorder(padding: 4.0))
       }

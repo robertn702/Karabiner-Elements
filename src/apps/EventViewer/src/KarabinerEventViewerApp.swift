@@ -3,6 +3,7 @@ import SwiftUI
 
 @main
 struct KarabinerEventViewerApp: App {
+  @AppStorage("uiLanguage") private var language = "auto"
   @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
   @StateObject private var userSettings: UserSettings
@@ -41,10 +42,11 @@ struct KarabinerEventViewerApp: App {
       content: {
         ContentView()
           .environmentObject(userSettings)
+          .modifier(StoredAppLanguage())
       }
     )
     .commands {
-      FindCommands()
+      FindCommands(locale: AppLanguage.locale(for: language))
     }
   }
 }

@@ -9,13 +9,15 @@
 
 namespace krbn::core_service::daemon {
 class core_service_daemon_state_manager final : public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   nod::signal<void(const core_service_daemon_state&)> core_service_daemon_state_changed;
 
   core_service_daemon_state_manager(const core_service_daemon_state_manager&) = delete;
 
-  core_service_daemon_state_manager()
-      : dispatcher_client() {
+  core_service_daemon_state_manager() {
+    dispatcher_client_constructor_guard_.initialize();
   }
 
   ~core_service_daemon_state_manager() {
