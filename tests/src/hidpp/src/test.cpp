@@ -86,6 +86,35 @@ hidpp::session make_session(uint16_t cid = top_button, uint8_t software_id = 1) 
   return hidpp::session(cid, software_id, "test hidpp_button:");
 }
 
+// Lets every attempt of the pending request time out.
+void time_out(hidpp::session& s) {
+  for (int i = 0; i < hidpp::max_attempts; ++i) {
+    s.handle_timeout(s.get_generation());
+  }
+}
+
+hidpp::long_report with_software_id(hidpp::long_report r, uint8_t software_id) {
+  r[3] = static_cast<uint8_t>((r[3] & 0xf0) | software_id);
+  return r;
+}
+
+// Sessions waiting for a reply in each discovery phase, and the HID++ error that answers the request.
+struct discovery_phase final {
+  void (*enter)(hidpp::session&);
+  hidpp::long_report error;
+};
+
+const std::vector<discovery_phase> discovery_phases = {
+    {[](hidpp::session& s) { s.start(); },
+     make_report({0x11, 0xff, 0xff, 0x00, 0x01, 0x02})},
+    {[](hidpp::session& s) { s.start(); input(s, feature_index_reply); },
+     make_report({0x11, 0xff, 0xff, 0x0a, 0x01, 0x02})},
+    {[](hidpp::session& s) { s.start(); input(s, feature_index_reply); input(s, control_count_reply); input(s, control_info_replies[0]); },
+     make_report({0x11, 0xff, 0xff, 0x0a, 0x11, 0x02})},
+    {[](hidpp::session& s) { discover(s); },
+     make_report({0x11, 0xff, 0xff, 0x0a, 0x21, 0x02})},
+};
+
 std::vector<uint8_t> mx_anywhere_3s_descriptor() {
   // The report descriptor of Logitech MX Anywhere 3S (046d:b037) over Bluetooth Low Energy.
   // clang-format off
@@ -425,6 +454,210 @@ int main() {
       }
       expect(s2.handle_timeout(s2.get_generation()).request == undivert_request);
       expect(s2.get_state() == hidpp::session::state::failed);
+    }
+  };
+
+  "recovery after a discovery timeout"_test = [] {
+    for (const auto& phase : discovery_phases) {
+      auto s = make_session();
+      phase.enter(s);
+      auto old_generation = s.get_generation();
+      auto old_state = s.get_state();
+
+      // Activity while waiting changes nothing.
+      expect(!s.can_recover_on_physical_activity());
+      expect(!s.restart_after_discovery_timeout(2).request);
+      expect(s.get_state() == old_state);
+      expect(s.get_generation() == old_generation);
+      expect(s.waiting_reply());
+
+      time_out(s);
+      expect(s.get_state() == hidpp::session::state::failed);
+      expect(s.can_recover_on_physical_activity());
+      expect(s.can_recover_on_physical_activity()) << "the getter does not consume the allowance";
+
+      // Nothing is sent without activity.
+      expect(!s.waiting_reply());
+      expect(!s.handle_timeout(s.get_generation()).request);
+      expect(!input(s, feature_index_reply).request);
+      expect(s.can_recover_on_physical_activity());
+
+      auto failed_generation = s.get_generation();
+      auto r = s.restart_after_discovery_timeout(2);
+      expect(r.request == with_software_id(get_feature_request, 2));
+      expect(!r.pressed);
+      expect(s.get_state() == hidpp::session::state::waiting_feature_index);
+      expect(s.waiting_reply());
+      expect(s.get_controls().empty());
+      expect(s.get_reason().empty());
+      expect(s.get_generation() > failed_generation) << "the generation is never reset";
+      expect(!s.can_recover_on_physical_activity());
+
+      // Repeated activity does not restart again.
+      auto restarted_generation = s.get_generation();
+      expect(!s.restart_after_discovery_timeout(3).request);
+      expect(s.get_generation() == restarted_generation);
+
+      // Timers of the failed attempt and replies to its software id are ignored.
+      expect(!s.handle_timeout(old_generation).request);
+      expect(!s.handle_timeout(failed_generation).request);
+      expect(!input(s, feature_index_reply).request);
+      expect(s.get_state() == hidpp::session::state::waiting_feature_index);
+
+      // The second failure is final.
+      {
+        auto failed_again = s;
+        time_out(failed_again);
+        expect(failed_again.get_state() == hidpp::session::state::failed);
+        expect(!failed_again.can_recover_on_physical_activity());
+        expect(!failed_again.restart_after_discovery_timeout(4).request);
+        expect(failed_again.get_state() == hidpp::session::state::failed);
+        expect(!failed_again.stop().request);
+      }
+
+      // Discovery starts from the beginning with the new software id.
+      expect(input(s, with_software_id(feature_index_reply, 2)).request == with_software_id(get_count_request, 2));
+      expect(input(s, with_software_id(control_count_reply, 2)).request == with_software_id(get_control_info_request(0), 2));
+      for (size_t i = 0; i < control_info_replies.size(); ++i) {
+        input(s, with_software_id(control_info_replies[i], 2));
+      }
+      expect(s.get_controls().size() == 7_ul);
+      expect(input(s, with_software_id(reporting_reply(top_button, 0x00), 2)).request == with_software_id(divert_request, 2));
+      input(s, with_software_id(divert_reply(top_button, 0x03), 2));
+      expect(s.get_state() == hidpp::session::state::diverted);
+      expect(!s.can_recover_on_physical_activity());
+      expect(input(s, notification({top_button})).pressed == std::optional<bool>(true));
+      expect(s.stop().request == with_software_id(undivert_request, 2));
+    }
+
+    // The new software id is normalized like the constructor argument.
+    {
+      auto s = make_session(top_button, 2);
+      s.start();
+      time_out(s);
+      expect(s.restart_after_discovery_timeout(0x10).request == get_feature_request);
+    }
+  };
+
+  "recovery: control ownership is checked again"_test = [] {
+    auto recover = [] {
+      auto s = make_session();
+      s.start();
+      time_out(s);
+      s.restart_after_discovery_timeout(2);
+      input(s, with_software_id(feature_index_reply, 2));
+      input(s, with_software_id(control_count_reply, 2));
+      for (const auto& r : control_info_replies) {
+        input(s, with_software_id(r, 2));
+      }
+      return s;
+    };
+
+    {
+      auto s = recover();
+      expect(s.get_state() == hidpp::session::state::waiting_reporting);
+      expect(!input(s, with_software_id(reporting_reply(top_button, 0x01), 2)).request);
+      expect(s.get_state() == hidpp::session::state::refused);
+      expect(s.get_reason().find("already diverted") != std::string::npos);
+      expect(!s.can_recover_on_physical_activity());
+      expect(!s.stop().request) << "another client's setting must not be restored";
+    }
+
+    {
+      auto s = recover();
+      expect(!input(s, with_software_id(reporting_reply(top_button, 0x00, 0x0053), 2)).request);
+      expect(s.get_state() == hidpp::session::state::refused);
+      expect(s.get_reason().find("remapped") != std::string::npos);
+      expect(!s.restart_after_discovery_timeout(3).request);
+      expect(!s.stop().request);
+    }
+  };
+
+  "recovery: only discovery timeouts"_test = [] {
+    auto expect_no_recovery = [](hidpp::session& s, hidpp::session::state expected) {
+      auto generation = s.get_generation();
+      expect(!s.can_recover_on_physical_activity());
+      expect(!s.restart_after_discovery_timeout(2).request);
+      expect(s.get_state() == expected);
+      expect(s.get_generation() == generation);
+    };
+
+    // Not started.
+    {
+      auto s = make_session();
+      expect_no_recovery(s, hidpp::session::state::initial);
+    }
+
+    // HID++ errors.
+    for (const auto& phase : discovery_phases) {
+      auto s = make_session();
+      phase.enter(s);
+      input(s, phase.error);
+      expect(s.get_state() == hidpp::session::state::failed);
+      expect_no_recovery(s, hidpp::session::state::failed);
+    }
+
+    // Refusals.
+    {
+      auto s = make_session();
+      s.start();
+      input(s, make_report({0x11, 0xff, 0x00, 0x01, 0x00}));
+      expect_no_recovery(s, hidpp::session::state::refused);
+    }
+    {
+      auto s = make_session(0x0050);
+      discover(s);
+      expect_no_recovery(s, hidpp::session::state::refused);
+    }
+    {
+      auto s = make_session();
+      discover(s);
+      input(s, reporting_reply(top_button, 0x01));
+      expect_no_recovery(s, hidpp::session::state::refused);
+    }
+
+    // No reply to the divert request.
+    {
+      auto s = make_session();
+      discover(s);
+      input(s, reporting_reply(top_button, 0x00));
+      time_out(s);
+      expect(s.get_state() == hidpp::session::state::failed);
+      expect_no_recovery(s, hidpp::session::state::failed);
+      expect(!s.stop().request) << "undo once";
+    }
+
+    // The device did not divert.
+    {
+      auto s = make_session();
+      discover(s);
+      input(s, reporting_reply(top_button, 0x00));
+      input(s, divert_reply(top_button, 0x02));
+      expect_no_recovery(s, hidpp::session::state::failed);
+    }
+
+    // Stop cancels the recovery.
+    {
+      auto s = make_session();
+      s.start();
+      time_out(s);
+      expect(s.can_recover_on_physical_activity());
+      expect(!s.stop().request);
+      expect_no_recovery(s, hidpp::session::state::stopped);
+    }
+
+    // A diverted and held control is not affected.
+    {
+      auto s = make_session();
+      make_diverted(s);
+      input(s, notification({top_button}));
+      expect_no_recovery(s, hidpp::session::state::diverted);
+      expect(s.get_pressed());
+      expect(input(s, notification({})).pressed == std::optional<bool>(false));
+      expect(input(s, notification({top_button})).pressed == std::optional<bool>(true));
+      auto r = s.stop();
+      expect(r.request == undivert_request);
+      expect(r.pressed == std::optional<bool>(false));
     }
   };
 

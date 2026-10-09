@@ -106,6 +106,14 @@ keeps its firmware function.
 - If the device does not answer or rejects a request, the control is restored and
   left to the firmware until the device is grabbed again (reconnect, wake, restart,
   or configuration change).
+- If only the discovery before the diversion times out (the device did not answer
+  while Karabiner-Elements looked up the feature, the controls, or the reporting
+  state), it is retried once for the same device when the device next reports
+  pointer movement or scrolling. Pressing the button does not retry it. A refusal,
+  an error reply, a failed diversion, or a second timeout is not retried, and the
+  control stays with the firmware until the device is grabbed again. This is
+  not guaranteed to fix a device that stays unresponsive, and until the retry
+  succeeds, presses of the button may still perform its firmware function.
 - If Karabiner-Core-Service stops unexpectedly, the control can stay diverted
   until the device reconnects. Turn the device off and on to restore it.
 - Do not let another application, such as Logi Options+, manage the same control.

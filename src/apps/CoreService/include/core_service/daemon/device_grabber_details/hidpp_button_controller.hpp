@@ -28,6 +28,11 @@ namespace krbn::core_service::daemon::device_grabber_details {
 // the control is restored and left to the firmware until the next activation (reconnect, wake, restart or
 // configuration change). Restoration is best effort. If Karabiner-Core-Service terminates abnormally or the device
 // disconnects, the device itself resets temporary diversion when it reconnects.
+// Exception: if only the discovery before the diversion (feature, control count, control info or reporting state)
+// timed out, the session allows one automatic recovery for the same device. It restarts the discovery when
+// handle_physical_activity is called, which the owner does when the device reports motion again. A refusal, a HID++
+// error, a failed diversion, or a second timeout is not recovered, and the control stays with the firmware until the
+// next activation.
 //
 class hidpp_button_controller final : public pqrs::dispatcher::extra::dispatcher_client {
 public:
@@ -77,6 +82,26 @@ public:
                            absolute_time_point time_stamp) {
     handle_result(session_.handle_input_report(report),
                   time_stamp);
+  }
+
+  [[nodiscard]] bool can_recover_on_physical_activity() const {
+    return session_.can_recover_on_physical_activity();
+  }
+
+  // Restarts the discovery once if the session timed out before the diversion and has not recovered yet.
+  // The owner calls this method when the device reports physical motion.
+  // This method should be called in the shared dispatcher thread while the device is still opened.
+  void handle_physical_activity() {
+    if (!can_recover_on_physical_activity()) {
+      return;
+    }
+
+    logger::get_logger()->info("{0} restarting discovery once because the device reported motion after a discovery timeout",
+                               log_prefix_);
+
+    // The returned request is the first discovery request, so start() must not be called.
+    handle_result(session_.restart_after_discovery_timeout(next_software_id()),
+                  pqrs::osx::chrono::mach_absolute_time_point());
   }
 
   // Restores the control and reports a release if the button is held.
@@ -195,8 +220,8 @@ private:
     });
   }
 
-  // Seconds (CFTimeInterval), as hid_keyboard_caps_lock_led_state_manager uses with IOHIDDeviceSetValueWithCallback.
-  static constexpr CFTimeInterval query_timeout = 0.5;
+  // Milliseconds (IOHIDDeviceSetReportWithCallback documents its CFTimeInterval timeout in milliseconds).
+  static constexpr CFTimeInterval query_timeout = 500;
 
   pqrs::not_null_shared_ptr_t<pqrs::cf::run_loop_thread> run_loop_thread_;
   pqrs::cf::cf_ptr<IOHIDDeviceRef> device_;

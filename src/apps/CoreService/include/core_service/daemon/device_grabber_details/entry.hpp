@@ -112,6 +112,9 @@ public:
     hid_device_events_monitor_->values_arrived.connect([this](auto&& values_ptr) {
       auto d = core_configuration_->get_selected_profile().get_device(device_properties_->get_device_identifiers());
 
+      // Check the original values, before they are filtered or transformed.
+      notify_hidpp_button_of_physical_activity(*values_ptr);
+
       auto hid_values = *values_ptr;
 
       //
@@ -416,6 +419,40 @@ private:
       hid_device_events_monitor_->post_input_values(values);
     });
     hidpp_button_controller_->start();
+  }
+
+  // Lets the controller retry after a discovery timeout when the device moves or scrolls again.
+  // Only motion counts: button values and vendor reports include the buttons which hidpp_button_controller posts.
+  // This method should be called in the shared dispatcher thread.
+  void notify_hidpp_button_of_physical_activity(const std::vector<pqrs::osx::iokit_hid_value>& values) {
+    if (!hidpp_button_controller_ ||
+        !hidpp_button_controller_->can_recover_on_physical_activity() ||
+        !seized() ||
+        disabled_ ||
+        !needs_to_seize_device()) {
+      return;
+    }
+
+    auto moved = std::any_of(values.begin(),
+                             values.end(),
+                             [](const auto& v) {
+                               return v.get_integer_value() != 0 &&
+                                      (v.conforms_to(pqrs::hid::usage_page::generic_desktop, pqrs::hid::usage::generic_desktop::x) ||
+                                       v.conforms_to(pqrs::hid::usage_page::generic_desktop, pqrs::hid::usage::generic_desktop::y) ||
+                                       v.conforms_to(pqrs::hid::usage_page::generic_desktop, pqrs::hid::usage::generic_desktop::wheel) ||
+                                       v.conforms_to(pqrs::hid::usage_page::consumer, pqrs::hid::usage::consumer::ac_pan));
+                             });
+    if (!moved) {
+      return;
+    }
+
+    // Ignore a pending configuration change which the controller has not applied yet.
+    auto d = core_configuration_->get_selected_profile().get_device(device_properties_->get_device_identifiers());
+    if (d->get_hidpp_button() != hidpp_button_) {
+      return;
+    }
+
+    hidpp_button_controller_->handle_physical_activity();
   }
 
   // Releases a held button and restores the control.

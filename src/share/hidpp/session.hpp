@@ -100,7 +100,7 @@ public:
           uint8_t software_id,
           const std::string& log_prefix)
       : control_id_(control_id),
-        software_id_(static_cast<uint8_t>(software_id & 0x0f) != 0 ? static_cast<uint8_t>(software_id & 0x0f) : 1),
+        software_id_(normalize_software_id(software_id)),
         log_prefix_(log_prefix) {
   }
 
@@ -129,6 +129,15 @@ public:
     return reason_;
   }
 
+  // Whether the session failed because the device did not answer a discovery request
+  // (ROOT.getFeature, getCount, getCidInfo or getCidReporting) and has not been restarted yet.
+  // A session is restarted at most once in its lifetime.
+  [[nodiscard]] bool can_recover_on_physical_activity() const {
+    return state_ == state::failed &&
+           discovery_timed_out_ &&
+           !recovery_used_;
+  }
+
   // ROOT.getFeature(REPROG_CONTROLS_V4)
   result start() {
     if (state_ != state::initial) {
@@ -140,6 +149,26 @@ public:
                              0,
                              {static_cast<uint8_t>(reprog_controls_v4_feature_id >> 8),
                               static_cast<uint8_t>(reprog_controls_v4_feature_id & 0xff)}));
+  }
+
+  // Discovers again with a new software_id after can_recover_on_physical_activity() became true.
+  // The generation is not reset, so timers of the previous attempt are ignored.
+  result restart_after_discovery_timeout(uint8_t software_id) {
+    if (!can_recover_on_physical_activity()) {
+      return {};
+    }
+
+    recovery_used_ = true;
+    discovery_timed_out_ = false;
+    software_id_ = normalize_software_id(software_id);
+    state_ = state::initial;
+    feature_index_ = 0;
+    control_count_ = 0;
+    controls_.clear();
+    pending_request_ = std::nullopt;
+    reason_.clear();
+
+    return start();
   }
 
   result handle_input_report(std::span<const uint8_t> report) {
@@ -311,7 +340,11 @@ public:
     }
 
     if (attempts_ >= max_attempts) {
-      return fail(fmt::format("no HID++ reply after {0} attempts", attempts_));
+      return fail(fmt::format("no HID++ reply after {0} attempts", attempts_),
+                  state_ == state::waiting_feature_index ||
+                      state_ == state::waiting_control_count ||
+                      state_ == state::waiting_control_info ||
+                      state_ == state::waiting_reporting);
     }
 
     ++attempts_;
@@ -338,6 +371,7 @@ public:
     }
 
     state_ = state::stopped;
+    discovery_timed_out_ = false;
     pending_request_ = std::nullopt;
     ++generation_;
 
@@ -345,6 +379,10 @@ public:
   }
 
 private:
+  static uint8_t normalize_software_id(uint8_t software_id) {
+    return static_cast<uint8_t>(software_id & 0x0f) != 0 ? static_cast<uint8_t>(software_id & 0x0f) : 1;
+  }
+
   long_report make_request(uint8_t feature_index,
                            uint8_t function,
                            std::initializer_list<uint8_t> parameters) const {
@@ -432,8 +470,10 @@ private:
   }
 
   // Undo a divert request that the device might have applied, so the control keeps its firmware function.
-  result fail(const std::string& reason) {
+  // discovery_timed_out is decided by the caller because divert_requested_ is cleared here.
+  result fail(const std::string& reason, bool discovery_timed_out = false) {
     state_ = state::failed;
+    discovery_timed_out_ = discovery_timed_out;
     pending_request_ = std::nullopt;
     reason_ = reason;
 
@@ -455,6 +495,8 @@ private:
   uint8_t control_count_ = 0;
   std::vector<control> controls_;
   bool divert_requested_ = false;
+  bool discovery_timed_out_ = false;
+  bool recovery_used_ = false;
   bool pressed_ = false;
   std::optional<long_report> pending_request_;
   int attempts_ = 0;
