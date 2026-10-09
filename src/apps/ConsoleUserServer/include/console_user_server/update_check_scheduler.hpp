@@ -11,12 +11,13 @@
 
 namespace krbn::console_user_server {
 class update_check_scheduler final : public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   update_check_scheduler(const update_check_scheduler&) = delete;
 
-  update_check_scheduler()
-      : dispatcher_client(),
-        check_for_updates_task_(*this) {
+  update_check_scheduler() {
+    dispatcher_client_constructor_guard_.initialize();
   }
 
   ~update_check_scheduler() override {
@@ -93,7 +94,9 @@ private:
            std::chrono::minutes(jitter_minutes(engine));
   }
 
-  pqrs::dispatcher::extra::debounced_task check_for_updates_task_;
   bool check_for_updates_enabled_ = false;
+
+  // Construct after potentially throwing members; destruction requires detach.
+  pqrs::dispatcher::extra::debounced_task check_for_updates_task_{*this};
 };
 } // namespace krbn::console_user_server

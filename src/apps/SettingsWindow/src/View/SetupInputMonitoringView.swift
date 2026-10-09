@@ -9,25 +9,21 @@ struct SetupInputMonitoringView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 20.0) {
-      Label(
-        "Please allow to monitor input events",
+      AppLocalizedLabel(
+        "settings.setup.input_monitoring.permission",
         systemImage: "lightbulb"
       )
       .font(.system(size: 24))
 
-      Text(
-        """
-        Karabiner-Core-Service requires Input Monitoring permission.
-        Please allow them on Privacy & Security System Settings.
-        """
+      AppLocalizedText(
+        "settings.setup.input_monitoring.description"
       )
-      .fixedSize(horizontal: false, vertical: true)
 
       OpenSystemSettingsButton(
         url: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent",
         label: {
-          Label(
-            "Open Privacy & Security System Settings…",
+          AppLocalizedConstrainedLabel(
+            "settings.setup.system_settings.open_privacy",
             systemImage: "arrow.forward.circle.fill")
         }
       )

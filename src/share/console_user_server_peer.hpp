@@ -4,6 +4,7 @@
 #include "types.hpp"
 #include <memory>
 #include <nlohmann/json.hpp>
+#include <pqrs/dispatcher.hpp>
 #include <pqrs/dispatcher/extra/dispatcher_client.hpp>
 #include <pqrs/unix_domain_stream.hpp>
 #include <string>
@@ -13,6 +14,8 @@
 namespace krbn {
 class console_user_server_peer final : public pqrs::dispatcher::extra::dispatcher_client,
                                        public std::enable_shared_from_this<console_user_server_peer> {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   console_user_server_peer(const console_user_server_peer&) = delete;
 
@@ -22,6 +25,7 @@ public:
       : dispatcher_client(std::move(weak_dispatcher)),
         weak_server_(weak_server),
         peer_id_(peer_id) {
+    dispatcher_client_constructor_guard_.initialize();
   }
 
   ~console_user_server_peer() override {

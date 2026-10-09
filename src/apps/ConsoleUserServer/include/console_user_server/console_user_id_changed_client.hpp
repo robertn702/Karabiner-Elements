@@ -7,10 +7,13 @@
 #include "constants.hpp"
 #include "logger.hpp"
 #include "types.hpp"
+#include <pqrs/dispatcher.hpp>
 #include <pqrs/unix_domain_stream.hpp>
 
 namespace krbn::console_user_server {
 class console_user_id_changed_client final : public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   // Signals (invoked from the shared dispatcher thread)
 
@@ -23,8 +26,8 @@ public:
 
   console_user_id_changed_client(const console_user_id_changed_client&) = delete;
 
-  console_user_id_changed_client()
-      : dispatcher_client() {
+  console_user_id_changed_client() {
+    dispatcher_client_constructor_guard_.initialize();
   }
 
   ~console_user_id_changed_client() override {

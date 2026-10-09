@@ -18,6 +18,10 @@
 
 namespace pqrs::osx::accessibility {
 class monitor final : public dispatcher::extra::dispatcher_client {
+private:
+  // Keep the guard first so member initialization failures also detach.
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_exception_guard_{*this};
+
 public:
   // Signals (invoked from the dispatcher thread)
 
@@ -28,9 +32,8 @@ private:
   monitor(const monitor&) = delete;
 
   monitor(std::weak_ptr<dispatcher::dispatcher> weak_dispatcher)
-      : dispatcher_client(weak_dispatcher),
-        last_application_(std::make_shared<application>()),
-        last_focused_ui_element_(std::make_shared<focused_ui_element>()) {
+      : dispatcher_client(weak_dispatcher) {
+    dispatcher_client_constructor_exception_guard_.initialize();
   }
 
   void register_callback() {
@@ -44,7 +47,10 @@ private:
   }
 
 public:
-  ~monitor() override = default;
+  ~monitor() override {
+    // Also detach if shared_ptr control block allocation fails after construction.
+    detach_from_dispatcher();
+  }
 
   // initialize_shared_monitor and terminate_shared_monitor must be called
   // serially during application lifecycle transitions.
@@ -229,7 +235,7 @@ private:
   static inline std::shared_ptr<monitor> shared_monitor_;
   static inline std::mutex shared_monitor_mutex_;
 
-  pqrs::not_null_shared_ptr_t<application> last_application_;
-  pqrs::not_null_shared_ptr_t<focused_ui_element> last_focused_ui_element_;
+  pqrs::not_null_shared_ptr_t<application> last_application_{std::make_shared<application>()};
+  pqrs::not_null_shared_ptr_t<focused_ui_element> last_focused_ui_element_{std::make_shared<focused_ui_element>()};
 };
 } // namespace pqrs::osx::accessibility

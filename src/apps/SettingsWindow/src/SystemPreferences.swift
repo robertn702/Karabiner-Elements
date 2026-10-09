@@ -1,4 +1,3 @@
-import AsyncAlgorithms
 import Combine
 import Foundation
 import SwiftUI
@@ -9,13 +8,12 @@ final class SystemPreferences: ObservableObject {
 
   @Published var virtualHIDKeyboardModifierMappingsExists: Bool = false
 
-  private let timer: AsyncTimerSequence<ContinuousClock>
+  private let timer: PeriodicTimer
   private var timerTask: Task<Void, Never>?
 
   init() {
-    timer = AsyncTimerSequence(
-      interval: .seconds(3),
-      clock: .continuous
+    timer = PeriodicTimer(
+      interval: .seconds(3)
     )
   }
 
@@ -25,10 +23,10 @@ final class SystemPreferences: ObservableObject {
     //
 
     timerTask = Task { @MainActor in
-      self.checkModifierMappings()
+      self.updateModifierMappingsState()
 
       for await _ in timer {
-        self.checkModifierMappings()
+        self.updateModifierMappingsState()
       }
     }
   }
@@ -41,8 +39,10 @@ final class SystemPreferences: ObservableObject {
     timerTask?.cancel()
   }
 
-  private func checkModifierMappings() {
-    virtualHIDKeyboardModifierMappingsExists =
-      krbn_system_preferences_virtual_hid_keyboard_modifier_mappings_exists()
+  private func updateModifierMappingsState() {
+    let exists = krbn_system_preferences_virtual_hid_keyboard_modifier_mappings_exists()
+    guard virtualHIDKeyboardModifierMappingsExists != exists else { return }
+
+    virtualHIDKeyboardModifierMappingsExists = exists
   }
 }

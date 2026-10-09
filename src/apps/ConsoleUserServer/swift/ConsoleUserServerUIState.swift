@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 
 struct UIStatePayload: Decodable {
@@ -6,6 +7,7 @@ struct UIStatePayload: Decodable {
     var showIcon = false
     var showProfileName = false
     var showAdditionalMenuItems = false
+    var showQuitConfirmationMenu = true
     var enableMultitouchExtension = false
   }
 
@@ -41,6 +43,7 @@ struct UIStatePayload: Decodable {
     let selected: Bool
   }
 
+  let uiLanguage: String
   let configurationLoaded: Bool
   let appIconNumber: Int
   let menuSettings: MenuSettings
@@ -71,6 +74,7 @@ private func notificationMessageUpdated(_ value: UnsafePointer<CChar>?) {
 final class ConsoleUserServerUIState: ObservableObject {
   static let shared = ConsoleUserServerUIState()
 
+  @Published private(set) var uiLanguage = "auto"
   @Published private(set) var configurationLoaded = false
   @Published private(set) var appIconNumber = 0
   @Published private(set) var menuSettings = UIStatePayload.MenuSettings()
@@ -78,6 +82,8 @@ final class ConsoleUserServerUIState: ObservableObject {
     UIStatePayload.NotificationWindowSettings()
   @Published private(set) var profiles: [UIStatePayload.Profile] = []
   @Published var notificationMessage = ""
+
+  private var languageSubscriptions: Set<AnyCancellable> = []
 
   var menuVisible: Bool {
     configurationLoaded && (menuSettings.showIcon || menuSettings.showProfileName)
@@ -88,6 +94,19 @@ final class ConsoleUserServerUIState: ObservableObject {
   }
 
   func start() {
+    if languageSubscriptions.isEmpty {
+      AppLocalization.shared.$catalog
+        .sink { [weak self] _ in
+          // @Published sends before assignment; resolve using the updated catalog on the main actor.
+          Task { @MainActor in self?.publishResolvedUILanguage() }
+        }
+        .store(in: &languageSubscriptions)
+      NotificationCenter.default.publisher(for: NSLocale.currentLocaleDidChangeNotification)
+        .sink { [weak self] _ in
+          Task { @MainActor in self?.publishResolvedUILanguage() }
+        }
+        .store(in: &languageSubscriptions)
+    }
     console_user_server_register_ui_state_callback(uiStateUpdated)
     console_user_server_register_notification_message_callback(notificationMessageUpdated)
   }
@@ -97,11 +116,18 @@ final class ConsoleUserServerUIState: ObservableObject {
   }
 
   fileprivate func apply(_ payload: UIStatePayload) {
+    uiLanguage = payload.uiLanguage
     appIconNumber = payload.appIconNumber
     menuSettings = payload.menuSettings
     notificationWindowSettings = payload.notificationWindowSettings
     profiles = payload.profiles
     configurationLoaded = payload.configurationLoaded
+    publishResolvedUILanguage()
     NotificationWindowManager.shared.updateWindowsVisibility()
+  }
+
+  private func publishResolvedUILanguage() {
+    let language = AppLanguage.locale(for: uiLanguage).identifier
+    console_user_server_set_resolved_ui_language(language)
   }
 }

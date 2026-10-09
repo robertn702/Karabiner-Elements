@@ -16,13 +16,12 @@
 #include "types.hpp"
 #include "vector_utility.hpp"
 #include <filesystem>
-#include <fstream>
 #include <glob/glob.hpp>
+#include <memory>
 #include <pqrs/filesystem.hpp>
 #include <pqrs/osx/process_info.hpp>
 #include <pqrs/osx/session.hpp>
 #include <string>
-#include <sys/stat.h>
 #include <unordered_map>
 
 // Example: tests/src/core_configuration/json/example.json
@@ -32,6 +31,9 @@ using namespace std::string_literals;
 
 class core_configuration final {
 public:
+  static constexpr size_t max_configuration_file_size = 64 * 1024 * 1024;
+  static constexpr auto user_core_configuration_file_mode = filesystem_utility::permissions_0600;
+
   enum class source {
     default_configuration,
     user_file,
@@ -67,8 +69,6 @@ public:
                      error_handling error_handling)
       : json_(nlohmann::json::object()),
         error_handling_(error_handling),
-        load_state_(load_state::loaded),
-        source_(source::default_configuration),
         global_configuration_(std::make_shared<details::global_configuration>(nlohmann::json::object(),
                                                                               error_handling)),
         machine_specific_(std::make_shared<details::machine_specific>(nlohmann::json::object(),
@@ -82,69 +82,8 @@ public:
     helper_values_.push_back_array<details::profile>("profiles",
                                                      profiles_);
 
-    std::error_code status_error;
-    auto file_status = std::filesystem::status(file_path, status_error);
-    if (status_error) {
-      if (status_error != std::errc::no_such_file_or_directory &&
-          status_error != std::errc::not_a_directory) {
-        load_state_ = is_permission_error(status_error)
-                          ? load_state::permission_error
-                          : load_state::other_error;
-        logger::get_logger()->error("failed to access {0}: {1}",
-                                    file_path,
-                                    status_error.message());
-      }
-
-    } else if (std::filesystem::exists(file_status)) {
-      bool valid_file_owner = false;
-
-      // Load karabiner.json only when the owner is root or current session user.
-      if (pqrs::filesystem::is_owned(file_path, 0)) {
-        valid_file_owner = true;
-      } else {
-        if (pqrs::filesystem::is_owned(file_path, expected_file_owner)) {
-          valid_file_owner = true;
-        }
-      }
-
-      if (!valid_file_owner) {
-        logger::get_logger()->warn("{0} is not owned by a valid user.", file_path);
-        load_state_ = load_state::other_error;
-
-      } else {
-        // errno is thread-local on macOS, so another thread cannot overwrite it.
-        // Clear it before opening the file and capture it immediately if opening fails because
-        // another function call on this thread could overwrite it.
-        errno = 0;
-        std::ifstream input(file_path);
-        if (input) {
-          try {
-            json_ = json_utility::parse_jsonc(input);
-
-            helper_values_.update_value(json_,
-                                        error_handling);
-
-            load_state_ = load_state::loaded;
-            source_ = file_path == constants::get_system_core_configuration_file_path().string()
-                          ? source::system_file
-                          : source::user_file;
-
-          } catch (std::exception& e) {
-            logger::get_logger()->error("parse error in {0}: {1}", file_path, e.what());
-            parse_error_message_ = e.what();
-            load_state_ = load_state::json_error;
-          }
-        } else {
-          auto error = std::error_code(errno, std::generic_category());
-          load_state_ = is_permission_error(error)
-                            ? load_state::permission_error
-                            : load_state::other_error;
-          logger::get_logger()->error("failed to open {0}: {1}",
-                                      file_path,
-                                      error.message());
-        }
-      }
-    }
+    load_file(file_path,
+              expected_file_owner);
 
     // Fallbacks
     if (profiles_.empty()) {
@@ -276,6 +215,48 @@ public:
   }
 
 private:
+  void load_file(const std::string& file_path,
+                 uid_t expected_file_owner) {
+    auto contents = pqrs::filesystem::read_file(file_path,
+                                                pqrs::filesystem::read_file_options{
+                                                    .max_size = max_configuration_file_size,
+                                                    .allowed_owners = std::vector<uid_t>{0, expected_file_owner},
+                                                });
+    if (!contents) {
+      const auto& error = contents.error();
+      using reason = pqrs::filesystem::read_file_error::reason;
+      if (error.type == reason::open_failed &&
+          (error.code == std::errc::no_such_file_or_directory ||
+           error.code == std::errc::not_a_directory)) {
+        return;
+      }
+      load_state_ = is_permission_error(error.code)
+                        ? load_state::permission_error
+                        : load_state::other_error;
+      logger::get_logger()->error("failed to read {0}: {1}", file_path, error.message());
+      return;
+    }
+
+    try {
+      json_ = json_utility::parse_jsonc(**contents);
+
+      helper_values_.update_value(json_,
+                                  error_handling_);
+
+      load_state_ = load_state::loaded;
+      source_ = file_path == constants::get_system_core_configuration_file_path().string()
+                    ? source::system_file
+                    : source::user_file;
+
+    } catch (std::exception& e) {
+      logger::get_logger()->error("parse error in {0}: {1}",
+                                  file_path,
+                                  e.what());
+      parse_error_message_ = e.what();
+      load_state_ = load_state::json_error;
+    }
+  }
+
   [[nodiscard]] static bool is_permission_error(const std::error_code& error) {
     return error == std::errc::permission_denied ||
            error == std::errc::operation_not_permitted;
@@ -347,12 +328,10 @@ private:
                        tm.tm_mday);
   }
 
-  static constexpr auto user_core_configuration_file_mode = filesystem_utility::permissions_0600;
-
   nlohmann::json json_;
   error_handling error_handling_;
-  load_state load_state_;
-  source source_;
+  load_state load_state_{load_state::loaded};
+  source source_{source::default_configuration};
   std::string parse_error_message_;
 
   pqrs::not_null_shared_ptr_t<details::global_configuration> global_configuration_;

@@ -177,9 +177,7 @@ enum class collection_type : uint8_t {
 
 class maximum_value final {
 public:
-  maximum_value() noexcept
-      : maximum_value(0, 0) {
-  }
+  maximum_value() noexcept = default;
 
   maximum_value(uint32_t unsigned_value,
                 int32_t signed_value) noexcept
@@ -199,26 +197,26 @@ private:
   // These two interpretations are fixed at construction. Keeping them private
   // prevents either value from being changed independently while preserving
   // assignment of the complete value object for HID Global Push/Pop.
-  uint32_t unsigned_value_;
-  int32_t signed_value_;
+  uint32_t unsigned_value_{0};
+  int32_t signed_value_{0};
 };
 
 struct global_state final {
-  uint32_t usage_page = 0;
-  int32_t logical_minimum = 0;
-  bool logical_minimum_defined = false;
+  uint32_t usage_page{0};
+  int32_t logical_minimum{0};
+  bool logical_minimum_defined{false};
   maximum_value logical_maximum;
-  bool logical_maximum_defined = false;
+  bool logical_maximum_defined{false};
   // Undefined physical extents have different semantics from explicit values:
   // the HID specification makes them inherit the logical extents.
   std::optional<int32_t> physical_minimum;
   std::optional<maximum_value> physical_maximum;
-  int32_t unit_exponent = 0;
-  uint32_t unit = 0;
-  uint32_t report_size = 0;
-  bool report_size_defined = false;
-  uint8_t report_id = 0;
-  uint32_t report_count = 0;
+  int32_t unit_exponent{0};
+  uint32_t unit{0};
+  uint32_t report_size{0};
+  bool report_size_defined{false};
+  uint8_t report_id{0};
+  uint32_t report_count{0};
 };
 
 struct local_usage final {
@@ -243,7 +241,7 @@ struct local_state final {
   std::optional<uint32_t> string_minimum;
   std::optional<uint32_t> string_maximum;
   std::vector<local_usage_set> delimiter_usage_sets;
-  bool delimiter_open = false;
+  bool delimiter_open{false};
 
   void clear() {
     usages.clear();
@@ -571,8 +569,8 @@ struct report_offset_key final {
   std::vector<collection> collection_path;
   std::map<impl::report_offset_key, size_t> report_offsets;
   std::vector<report_field> report_fields;
-  bool report_main_item_seen = false;
-  bool report_id_declared = false;
+  bool report_main_item_seen{false};
+  bool report_id_declared{false};
   size_t next_application_generation = 0;
   std::optional<size_t> current_application_generation;
   std::map<impl::report_offset_key, size_t> report_application_owners;

@@ -4,12 +4,17 @@ import SwiftUI
 struct ConsoleUserServerNotConnectedAlertView: View {
   @ObservedObject private var contentViewStates = ContentViewStates.shared
   @FocusState var focus: Bool
+  let debugDisconnectedForAWhileOverride: Bool?
+
+  init(debugDisconnectedForAWhileOverride: Bool? = nil) {
+    self.debugDisconnectedForAWhileOverride = debugDisconnectedForAWhileOverride
+  }
 
   var body: some View {
     ZStack(alignment: .topLeading) {
       VStack(alignment: .center, spacing: 20.0) {
-        Label(
-          "Waiting to connect to the agent process (Karabiner-Console-User-Server)",
+        AppLocalizedLabel(
+          "settings.setup.connection.agent_waiting",
           systemImage: "hourglass"
         )
         .font(.system(size: 24))
@@ -17,11 +22,13 @@ struct ConsoleUserServerNotConnectedAlertView: View {
 
         ProgressView()
 
-        if contentViewStates.consoleUserServerClientDisconnectedForAWhile {
+        if debugDisconnectedForAWhileOverride
+          ?? contentViewStates.consoleUserServerClientDisconnectedForAWhile
+        {
           GroupBox {
             VStack(alignment: .center, spacing: 20.0) {
-              Text(
-                "The connection could not be established. Open System Settings and turn Karabiner-Elements Non-Privileged Agents v2 off and on again."
+              AppLocalizedText(
+                "settings.setup.connection.agent_retry"
               )
 
               Button(
@@ -29,8 +36,8 @@ struct ConsoleUserServerNotConnectedAlertView: View {
                   SMAppService.openSystemSettingsLoginItems()
                 },
                 label: {
-                  Label(
-                    "Open System Settings > General > Login Items & Extensions",
+                  AppLocalizedConstrainedLabel(
+                    "settings.setup.system_settings.open_login_items",
                     systemImage: "arrow.forward.circle.fill")
                 }
               )

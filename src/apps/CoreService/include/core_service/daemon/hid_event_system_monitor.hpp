@@ -10,59 +10,72 @@
 
 namespace krbn::core_service::daemon {
 class hid_event_system_monitor final : public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   hid_event_system_monitor(const hid_event_system_monitor&) = delete;
 
-  hid_event_system_monitor() : dispatcher_client(),
-                               set_property_timer_(*this) {
-    if (auto matching_dictionary = pqrs::cf::adopt_cf_ptr(IOServiceNameMatching("AppleUserHIDEventDriver"))) {
-      monitor_ = std::make_unique<pqrs::osx::iokit_service_monitor>(weak_dispatcher_,
-                                                                    pqrs::cf::run_loop_thread::extra::get_shared_run_loop_thread(),
-                                                                    matching_dictionary.get());
+  hid_event_system_monitor() {
+    dispatcher_client_constructor_guard_.initialize(
+        [&] {
+          if (auto matching_dictionary = pqrs::cf::adopt_cf_ptr(IOServiceNameMatching("AppleUserHIDEventDriver"))) {
+            monitor_ = std::make_unique<pqrs::osx::iokit_service_monitor>(weak_dispatcher_,
+                                                                          pqrs::cf::run_loop_thread::extra::get_shared_run_loop_thread(),
+                                                                          matching_dictionary.get());
 
-      monitor_->service_matched.connect([&](auto&& registry_entry_id, auto&& service_ptr) {
-        pqrs::osx::iokit_registry_entry entry(service_ptr);
+            monitor_->service_matched.connect([&](auto&& registry_entry_id, auto&& service_ptr) {
+              pqrs::osx::iokit_registry_entry entry(service_ptr);
 
-        if (auto serial_number = entry.find_string_property(CFSTR("SerialNumber"))) {
-          if (*serial_number == "pqrs.org:Karabiner-DriverKit-VirtualHIDKeyboard") {
-            set_property_timer_.start(
-                [this, registry_entry_id, serial_number] {
-                  logger::get_logger()->debug("hid_event_system_monitor set_caps_lock_delay_override for {0}", *serial_number);
+              if (auto serial_number = entry.find_string_property(CFSTR("SerialNumber"))) {
+                if (*serial_number == "pqrs.org:Karabiner-DriverKit-VirtualHIDKeyboard") {
+                  set_property_timer_.start(
+                      [this, registry_entry_id, serial_number] {
+                        logger::get_logger()->debug("hid_event_system_monitor set_caps_lock_delay_override for {0}", *serial_number);
 
-                  client_.reload_service_clients();
-                  client_.set_caps_lock_delay_override(registry_entry_id, 0);
+                        client_.reload_service_clients();
+                        client_.set_caps_lock_delay_override(registry_entry_id, 0);
 
-                  // Retry set_caps_lock_delay_override until the property is set properly.
-                  if (auto value = client_.get_caps_lock_delay_override(registry_entry_id)) {
-                    if (*value == 0) {
-                      set_property_timer_.stop();
-                    }
-                  }
-                },
-                std::chrono::milliseconds(3000));
+                        // Retry set_caps_lock_delay_override until the property is set properly.
+                        if (auto value = client_.get_caps_lock_delay_override(registry_entry_id)) {
+                          if (*value == 0) {
+                            set_property_timer_.stop();
+                          }
+                        }
+                      },
+                      std::chrono::milliseconds(3000));
+                }
+              }
+            });
+
+            monitor_->error_occurred.connect([](auto&& message, auto&& kern_return) {
+              logger::get_logger()->error("hid_event_system_monitor {0} {1}", message, kern_return);
+            });
+
+            monitor_->async_start();
           }
-        }
-      });
-
-      monitor_->error_occurred.connect([](auto&& message, auto&& kern_return) {
-        logger::get_logger()->error("hid_event_system_monitor {0} {1}", message, kern_return);
-      });
-
-      monitor_->async_start();
-    }
+        },
+        [this] {
+          cleanup();
+        });
   }
 
   ~hid_event_system_monitor() override {
     detach_from_dispatcher([this] {
-      set_property_timer_.stop();
-
-      monitor_ = nullptr;
+      cleanup();
     });
   }
 
 private:
+  void cleanup() {
+    set_property_timer_.stop();
+
+    monitor_ = nullptr;
+  }
+
   pqrs::osx::iokit_hid_event_system_client client_;
   std::unique_ptr<pqrs::osx::iokit_service_monitor> monitor_;
-  pqrs::dispatcher::extra::timer set_property_timer_;
+
+  // Construct after potentially throwing members; destruction requires detach.
+  pqrs::dispatcher::extra::timer set_property_timer_{*this};
 };
 } // namespace krbn::core_service::daemon

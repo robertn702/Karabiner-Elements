@@ -14,6 +14,9 @@ public:
     if (const auto it = patch.find("global_configuration"); it != patch.end()) {
       auto& global = core_configuration.get_global_configuration();
       const auto& global_json = *it;
+      changed |= apply_value<std::string>(global_json,
+                                          "ui_language",
+                                          [&](const auto& value) { global.set_ui_language(value); });
       changed |= apply_value<bool>(global_json,
                                    "check_for_updates",
                                    [&](auto value) { global.set_check_for_updates(value); });
@@ -26,6 +29,9 @@ public:
       changed |= apply_value<bool>(global_json,
                                    "show_additional_menu_items",
                                    [&](auto value) { global.set_show_additional_menu_items(value); });
+      changed |= apply_value<bool>(global_json,
+                                   "show_quit_confirmation_menu",
+                                   [&](auto value) { global.set_show_quit_confirmation_menu(value); });
       changed |= apply_value<bool>(global_json,
                                    "enable_notification_window",
                                    [&](auto value) { global.set_enable_notification_window(value); });

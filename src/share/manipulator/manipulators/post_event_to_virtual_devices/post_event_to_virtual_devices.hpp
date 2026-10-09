@@ -11,22 +11,26 @@
 #include "queue.hpp"
 #include "types.hpp"
 #include <algorithm>
+#include <pqrs/dispatcher.hpp>
 #include <pqrs/karabiner/driverkit/virtual_hid_device_service.hpp>
 
 namespace krbn::manipulator::manipulators::post_event_to_virtual_devices {
 class post_event_to_virtual_devices final : public base, public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   post_event_to_virtual_devices(std::weak_ptr<console_user_server_peer> weak_console_user_server_peer,
                                 std::weak_ptr<notification_message_manager> weak_notification_message_manager)
-      : base(),
-        dispatcher_client(),
-        weak_console_user_server_peer_(weak_console_user_server_peer),
+      : weak_console_user_server_peer_(weak_console_user_server_peer),
         weak_notification_message_manager_(weak_notification_message_manager),
         virtual_hid_keyboard_pressed_keys_manager_(std::make_shared<pressed_keys_manager>()),
         keyboard_suppression_(std::make_shared<keyboard_suppression>()),
         queue_(virtual_hid_keyboard_pressed_keys_manager_,
                keyboard_suppression_) {
-    mouse_key_handler_ = std::make_unique<mouse_key_handler>(queue_);
+    dispatcher_client_constructor_guard_.initialize(
+        [&] {
+          mouse_key_handler_ = std::make_unique<mouse_key_handler>(queue_);
+        });
   }
 
   ~post_event_to_virtual_devices() override {

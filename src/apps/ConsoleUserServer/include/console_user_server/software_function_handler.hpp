@@ -3,6 +3,7 @@
 #include "logger.hpp"
 #include <deque>
 #include <pqrs/cf/bundle.hpp>
+#include <pqrs/dispatcher.hpp>
 #include <pqrs/osx/accessibility.hpp>
 #include <pqrs/osx/cg_display.hpp>
 #include <pqrs/osx/cg_event.hpp>
@@ -14,10 +15,11 @@
 
 namespace krbn::console_user_server {
 class software_function_handler final : public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
-  software_function_handler()
-      : dispatcher_client(),
-        check_trusted_(false) {
+  software_function_handler() {
+    dispatcher_client_constructor_guard_.initialize();
   }
 
   ~software_function_handler() override {
@@ -308,7 +310,7 @@ private:
   }
 
 private:
-  bool check_trusted_;
+  bool check_trusted_{false};
   // Stored in order from the newest at the beginning.
   std::deque<application> frontmost_application_history_;
   focused_ui_element focused_ui_element_;

@@ -127,6 +127,32 @@ console.log("ignored");
       expect(result.log_messages.empty());
     }
 
+    // Console output lives outside the interpreter heap and has its own quota.
+    {
+      auto result = krbn::duktape_utility::eval_string_to_json(
+          "console.log(Array(1048577).join('x')); 1;");
+      expect(result.json == 1);
+      expect(result.log_messages.size() == 1024 * 1024);
+    }
+    for (const auto& code : {
+             "console.log(Array(1048578).join('x')); 1;",
+             "console.log(Array(1048577).join('x')); console.log('x'); 1;",
+             "var s = Array(524289).join('x'); console.log(s, s); 1;",
+             "var s = Array(1048577).join('x'); console.log({toString:function(){console.log(s);return 'x';}}); 1;"}) {
+      try {
+        krbn::duktape_utility::eval_string_to_json(code);
+        expect(false);
+      } catch (const krbn::duktape_eval_error& e) {
+        expect(std::string(e.what()).contains("console.log output limit exceeded"));
+      }
+    }
+    {
+      auto result = krbn::duktape_utility::eval_string_to_json(
+          "console.log(Array(1048578).join('x')); 1;", false);
+      expect(result.json == 1);
+      expect(result.log_messages.empty());
+    }
+
     // Unicode
     {
       auto result = krbn::duktape_utility::eval_string_to_json(R"(

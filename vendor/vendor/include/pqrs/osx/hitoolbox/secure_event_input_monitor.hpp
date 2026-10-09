@@ -16,6 +16,10 @@
 namespace pqrs::osx::hitoolbox {
 
 class secure_event_input_monitor : public dispatcher::extra::dispatcher_client {
+private:
+  // Keep the guard first so member initialization failures also detach.
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_exception_guard_{*this};
+
 public:
   //
   // Signals (invoked from the dispatcher thread)
@@ -33,9 +37,8 @@ public:
   secure_event_input_monitor(std::weak_ptr<dispatcher::dispatcher> weak_dispatcher,
                              std::chrono::milliseconds check_interval = std::chrono::milliseconds(200))
       : dispatcher_client(std::move(weak_dispatcher)),
-        check_interval_(check_interval),
-        timer_(*this),
-        secure_event_input_enabled_(IsSecureEventInputEnabled()) {
+        check_interval_(check_interval) {
+    dispatcher_client_constructor_exception_guard_.initialize();
   }
 
   ~secure_event_input_monitor() noexcept override {
@@ -70,8 +73,11 @@ private:
   }
 
   const std::chrono::milliseconds check_interval_;
-  pqrs::dispatcher::extra::timer timer_;
-  bool secure_event_input_enabled_;
+
+  bool secure_event_input_enabled_{IsSecureEventInputEnabled() != 0};
+
+  // Construct after potentially throwing members; destruction requires detach.
+  pqrs::dispatcher::extra::timer timer_{*this};
 };
 
 } // namespace pqrs::osx::hitoolbox

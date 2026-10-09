@@ -1,6 +1,6 @@
 #pragma once
 
-// pqrs::osx::file_monitor v2.2.0
+// pqrs::osx::file_monitor v3.1.0
 
 // (C) Copyright Takayama Fumihiko 2018.
 // Distributed under the Boost Software License, Version 1.0.
@@ -20,7 +20,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
 #include <memory>
 #include <mutex>
 #include <nod/nod.hpp>
@@ -29,6 +28,7 @@
 #include <pqrs/cf/array.hpp>
 #include <pqrs/cf/string.hpp>
 #include <pqrs/dispatcher.hpp>
+#include <pqrs/filesystem.hpp>
 #include <pqrs/gsl.hpp>
 #include <string>
 #include <system_error>
@@ -40,7 +40,18 @@
 
 namespace pqrs::osx {
 class file_monitor final : public dispatcher::extra::dispatcher_client {
+private:
+  // Keep the guard first so member initialization failures also detach.
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_exception_guard_{*this};
+
 public:
+  struct parameters final {
+    std::vector<std::string> files;
+
+    // Maximum file size in bytes. An unset value imposes no size limit.
+    std::optional<size_t> max_file_size;
+  };
+
   enum class availability {
     unavailable,
     available,
@@ -66,17 +77,24 @@ public:
   // Methods
 
   file_monitor(std::weak_ptr<dispatcher::dispatcher> weak_dispatcher,
-               const std::vector<std::string>& files) : dispatcher_client(weak_dispatcher),
-                                                        files_(files) {
-    queue_ = dispatch_queue_create("org.pqrs.osx.file_monitor", DISPATCH_QUEUE_SERIAL);
+               const parameters& parameters) : dispatcher_client(weak_dispatcher),
+                                               parameters_(parameters) {
+    dispatcher_client_constructor_exception_guard_.initialize(
+        [&] {
+          for (const auto& f : parameters_.files) {
+            watched_directories_.insert(dirname(f));
+          }
 
-    for (const auto& f : files) {
-      watched_directories_.insert(dirname(f));
-    }
-
-    dispatch_sync(queue_, ^{
-      impl::file_monitors_manager::insert(this);
-    });
+          queue_ = dispatch_queue_create("org.pqrs.osx.file_monitor", DISPATCH_QUEUE_SERIAL);
+          try {
+            // The manager serializes access internally. Keep allocation failures on
+            // the constructing thread instead of unwinding through a GCD block.
+            impl::file_monitors_manager::insert(this);
+          } catch (...) {
+            dispatch_release(queue_);
+            throw;
+          }
+        });
   }
 
   ~file_monitor() override {
@@ -114,39 +132,6 @@ public:
         });
       }
     });
-  }
-
-  [[nodiscard]] static std::shared_ptr<std::vector<uint8_t>> read_file(const std::string& path) {
-    std::ifstream ifstream(path);
-    if (!ifstream) {
-      return nullptr;
-    }
-
-    ifstream.seekg(0, std::fstream::end);
-    if (!ifstream) {
-      return nullptr;
-    }
-
-    auto size = ifstream.tellg();
-    if (size < std::streampos(0)) {
-      return nullptr;
-    }
-
-    ifstream.seekg(0, std::fstream::beg);
-    if (!ifstream) {
-      return nullptr;
-    }
-
-    auto buffer = std::make_shared<std::vector<uint8_t>>(static_cast<size_t>(size));
-    if (size > std::streampos(0)) {
-      ifstream.read(reinterpret_cast<char*>(buffer->data()),
-                    static_cast<std::streamsize>(size));
-      if (!ifstream) {
-        return nullptr;
-      }
-    }
-
-    return buffer;
   }
 
 private:
@@ -255,7 +240,7 @@ private:
     // Thus, we should signal manually once after the stream is started.
     update_watched_directory_availabilities();
 
-    for (const auto& file_path : files_) {
+    for (const auto& file_path : parameters_.files) {
       update_stream_file_paths(file_path);
 
       auto [updated, file_body, availability] = update_file_bodies(file_path);
@@ -345,16 +330,16 @@ private:
 
       } else {
         // FSEvents passes canonical file path to callback.
-        // Thus, we should to convert it to file path in `files_`.
+        // Thus, we should to convert it to file path in `parameters_.files`.
 
         std::optional<std::string> changed_file_path;
 
         if (auto canonical_path = file_monitor::canonical_path(e.file_path)) {
-          if (auto it = std::ranges::find_if(files_,
+          if (auto it = std::ranges::find_if(parameters_.files,
                                              [&](const auto& path) {
                                                return *canonical_path == file_monitor::canonical_path(path);
                                              });
-              it != std::end(files_)) {
+              it != std::end(parameters_.files)) {
             stream_file_paths_[e.file_path] = *it;
             changed_file_path = *it;
           }
@@ -468,7 +453,7 @@ private:
   }
 
   void reevaluate_watched_files_in_directory(const std::string& directory_path) {
-    for (const auto& file_path : files_) {
+    for (const auto& file_path : parameters_.files) {
       if (dirname(file_path) != directory_path) {
         continue;
       }
@@ -489,21 +474,25 @@ private:
 
   // This method is executed in the dispatcher thread.
   [[nodiscard]] std::tuple<bool, std::shared_ptr<std::vector<uint8_t>>, std::optional<availability>> update_file_bodies(const std::string& file_path) {
-    auto file_body = read_file(file_path);
+    std::shared_ptr<std::vector<uint8_t>> file_body;
+    if (auto result = pqrs::filesystem::read_file(file_path, {.max_size = parameters_.max_file_size})) {
+      file_body = *result;
+    }
+
     auto it = file_bodies_.find(file_path);
     auto previous_available = it != std::end(file_bodies_) && static_cast<bool>(it->second);
+    auto current_available = static_cast<bool>(file_body);
     if (it != std::end(file_bodies_)) {
-      if (it->second && file_body) {
-        if (*(it->second) == *(file_body)) {
-          // file_body is not changed
-          return {false, nullptr, std::nullopt};
-        }
-      } else if (!it->second && !file_body) {
-        // file_body is not changed
+      const auto& previous_body = it->second;
+      const bool both_unavailable = !previous_body && !file_body;
+      const bool same_contents = previous_body && file_body && *previous_body == *file_body;
+
+      if (both_unavailable || same_contents) {
+        // Neither availability nor contents have changed.
         return {false, nullptr, std::nullopt};
       }
     }
-    auto current_available = static_cast<bool>(file_body);
+
     auto availability = current_available != previous_available
                             ? std::optional(current_available ? availability::available
                                                               : availability::unavailable)
@@ -513,13 +502,13 @@ private:
     return {true, file_body, availability};
   }
 
-  std::vector<std::string> files_;
+  const parameters parameters_;
   std::unordered_set<std::string> watched_directories_;
   dispatch_queue_t queue_{};
   FSEventStreamRef stream_{};
   std::atomic<bool> ready_{false};
   std::unordered_map<std::string, availability> directory_availabilities_;
-  // FSEventStreamEventPath -> file in files_
+  // FSEventStreamEventPath -> file in parameters_.files
   // {
   //   "/Users/.../target/sub1/file1_1": "target/sub1/file1_1",
   //   "/Users/.../target/sub1/file1_2": "target/sub1/file1_2",

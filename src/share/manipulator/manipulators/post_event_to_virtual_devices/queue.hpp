@@ -14,6 +14,8 @@
 
 namespace krbn::manipulator::manipulators::post_event_to_virtual_devices {
 class queue final : pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   class event final {
   public:
@@ -294,8 +296,7 @@ public:
     }
 
   private:
-    event() {
-    }
+    event() = default;
 
     static const char* to_c_string(type t) {
 #define TO_C_STRING(TYPE) \
@@ -337,12 +338,9 @@ public:
 
   queue(pqrs::not_null_shared_ptr_t<pressed_keys_manager> virtual_hid_keyboard_pressed_keys_manager,
         pqrs::not_null_shared_ptr_t<keyboard_suppression> keyboard_suppression)
-      : dispatcher_client(),
-        virtual_hid_keyboard_pressed_keys_manager_(virtual_hid_keyboard_pressed_keys_manager),
-        keyboard_suppression_(keyboard_suppression),
-        cgeventtap_fallback_enabled_(false),
-        last_event_type_(event_type::single),
-        last_event_time_stamp_(0) {
+      : virtual_hid_keyboard_pressed_keys_manager_(virtual_hid_keyboard_pressed_keys_manager),
+        keyboard_suppression_(keyboard_suppression) {
+    dispatcher_client_constructor_guard_.initialize();
   }
 
   ~queue() override {
@@ -734,7 +732,7 @@ private:
   std::vector<event> events_;
   pqrs::not_null_shared_ptr_t<pressed_keys_manager> virtual_hid_keyboard_pressed_keys_manager_;
   pqrs::not_null_shared_ptr_t<keyboard_suppression> keyboard_suppression_;
-  bool cgeventtap_fallback_enabled_;
+  bool cgeventtap_fallback_enabled_{false};
 
   keyboard_repeat_detector keyboard_repeat_detector_;
 
@@ -777,8 +775,8 @@ private:
   // We also should add a wait before `key_up of modifier key`.
   // Without wait, control-space (Select the previous input source) does not work properly.
 
-  event_type last_event_type_;
-  absolute_time_point last_event_time_stamp_;
+  event_type last_event_type_{event_type::single};
+  absolute_time_point last_event_time_stamp_{0};
 
   pqrs::karabiner::driverkit::virtual_hid_device_driver::hid_report::keyboard_input keyboard_input_;
   pqrs::karabiner::driverkit::virtual_hid_device_driver::hid_report::consumer_input consumer_input_;

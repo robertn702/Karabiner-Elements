@@ -8,13 +8,13 @@
 #include <duk_module_node.h>
 #include <duktape.h>
 #include <filesystem>
-#include <fstream>
-#include <iostream>
 #include <memory>
 #include <pqrs/gsl.hpp>
 #include <pqrs/string.hpp>
 #include <spdlog/fmt/fmt.h>
-#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
 
 namespace krbn {
 class duktape_eval_error : public std::runtime_error {
@@ -103,6 +103,39 @@ inline void free(void* udata, void* ptr) {
   std::free(raw);
 }
 
+// This quota covers host-side console output, which is outside the Duktape heap.
+constexpr size_t max_console_output_bytes = 1024 * 1024;
+
+inline bool append_console_message(duk_context* ctx, std::string& output) {
+  std::string message;
+  if (!output.empty()) {
+    message += '\n';
+  }
+  auto remaining = max_console_output_bytes - output.size();
+  for (duk_idx_t i = 0; i < duk_get_top(ctx); ++i) {
+    if (i > 0) {
+      message += ' ';
+    }
+    duk_size_t size = 0;
+    auto value = duk_safe_to_lstring(ctx, i, &size);
+    if (message.size() > remaining || size > remaining - message.size()) {
+      return false;
+    }
+    auto converted = pqrs::string::cesu8_to_utf8(std::string_view(value, size));
+    if (converted.size() > remaining - message.size()) {
+      return false;
+    }
+    message += converted;
+  }
+  // String conversion can invoke JavaScript which logs recursively. Recheck
+  // against the current output size before committing this message.
+  if (message.size() > max_console_output_bytes - output.size()) {
+    return false;
+  }
+  output += message;
+  return true;
+}
+
 inline void setup_console(duk_context* ctx,
                           eval_heap_state& heap_state,
                           pqrs::not_null_shared_ptr_t<std::string> log_messages,
@@ -133,19 +166,10 @@ inline void setup_console(duk_context* ctx,
             return 0;
           }
 
-          auto n = duk_get_top(ctx);
-          std::ostringstream ss;
-          for (duk_idx_t i = 0; i < n; ++i) {
-            if (i > 0) {
-              ss << ' ';
-            }
-            ss << duk_safe_to_string(ctx, i);
+          // Raise the Duktape error only after C++ temporaries have been destroyed.
+          if (!append_console_message(ctx, *log_messages)) {
+            return duk_error(ctx, DUK_ERR_RANGE_ERROR, "console.log output limit exceeded");
           }
-          auto message = pqrs::string::cesu8_to_utf8(ss.str());
-          if (!log_messages->empty()) {
-            log_messages->append("\n");
-          }
-          log_messages->append(message);
           return 0;
         },
         DUK_VARARGS);

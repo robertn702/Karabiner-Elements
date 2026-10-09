@@ -13,27 +13,30 @@
 
 namespace krbn {
 class hid_keyboard_caps_lock_led_state_manager final : public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
-  hid_keyboard_caps_lock_led_state_manager(IOHIDDeviceRef device) : dispatcher_client(),
-                                                                    device_(device),
-                                                                    timer_(*this),
-                                                                    started_(false) {
-    if (device_) {
-      pqrs::osx::iokit_hid_device hid_device(*device_);
-      for (const auto& element : hid_device.make_elements()) {
-        pqrs::osx::iokit_hid_element e(*element);
+  hid_keyboard_caps_lock_led_state_manager(IOHIDDeviceRef device)
+      : device_(device) {
+    dispatcher_client_constructor_guard_.initialize(
+        [&] {
+          if (device_) {
+            pqrs::osx::iokit_hid_device hid_device(*device_);
+            for (const auto& element : hid_device.make_elements()) {
+              pqrs::osx::iokit_hid_element e(*element);
 
-        if (e.get_usage_page() == pqrs::hid::usage_page::leds &&
-            e.get_usage() == pqrs::hid::usage::led::caps_lock &&
-            e.get_type() == pqrs::osx::iokit_hid_element_type::output) {
-          logger::get_logger()->debug(
-              "caps lock is found on {0}",
-              iokit_utility::make_device_name(*device_));
+              if (e.get_usage_page() == pqrs::hid::usage_page::leds &&
+                  e.get_usage() == pqrs::hid::usage::led::caps_lock &&
+                  e.get_type() == pqrs::osx::iokit_hid_element_type::output) {
+                logger::get_logger()->debug(
+                    "caps lock is found on {0}",
+                    iokit_utility::make_device_name(*device_));
 
-          element_ = e;
-        }
-      }
-    }
+                element_ = e;
+              }
+            }
+          }
+        });
   }
 
   ~hid_keyboard_caps_lock_led_state_manager() {
@@ -142,7 +145,9 @@ private:
   pqrs::osx::iokit_hid_element element_;
   std::optional<led_state> state_;
   mutable std::mutex state_mutex_;
-  pqrs::dispatcher::extra::timer timer_;
-  bool started_;
+  bool started_{false};
+
+  // Construct after potentially throwing members; destruction requires detach.
+  pqrs::dispatcher::extra::timer timer_{*this};
 };
 } // namespace krbn

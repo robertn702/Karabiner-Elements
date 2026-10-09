@@ -1,19 +1,34 @@
 import SwiftUI
 
 struct UpdateView: View {
+  @AppLocalizationContext private var localized
   @ObservedObject private var settings = Settings.shared
   let version =
     Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
 
+  private var defaults: SettingsConfiguration.Defaults {
+    settings.configuration.defaultConfiguration
+  }
+
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 24.0) {
-        GroupBox(label: Text("Update")) {
+        GroupBox(label: AppLocalizedText("settings.update.title")) {
           VStack(alignment: .leading, spacing: 12.0) {
-            Text("Karabiner-Elements version \(version)")
+            AppLocalizedText("settings.update.version", arguments: ["version": version])
 
             Toggle(isOn: $settings.configuration.globalConfiguration.checkForUpdates) {
-              Text("Check for updates automatically (Default: on)")
+              AppLocalizedText([
+                "settings.update.automatic",
+                " ",
+                .init(
+                  "settings.general.defaults.value",
+                  arguments: [
+                    "value": localized(
+                      defaults.globalConfiguration.checkForUpdates
+                        ? "shared.value.on" : "shared.value.off")
+                  ]),
+              ])
             }
             .switchToggleStyle()
 
@@ -23,7 +38,8 @@ struct UpdateView: View {
                   krbn_updater_check_for_updates_stable_only()
                 },
                 label: {
-                  Label("Check for updates", systemImage: "network")
+                  AppLocalizedConstrainedLabel(
+                    "menu_bar_extra.check_for_updates", systemImage: "network")
                 }
               )
 
@@ -34,7 +50,8 @@ struct UpdateView: View {
                   krbn_updater_check_for_updates_with_beta_version()
                 },
                 label: {
-                  Label("Check for beta updates", systemImage: "hare")
+                  AppLocalizedConstrainedLabel(
+                    "menu_bar_extra.check_for_beta_updates", systemImage: "hare")
                 }
               )
             }
@@ -43,7 +60,7 @@ struct UpdateView: View {
           .frame(maxWidth: .infinity, alignment: .leading)
         }
 
-        GroupBox(label: Text("Web sites")) {
+        GroupBox(label: AppLocalizedText("settings.update.websites")) {
           VStack(alignment: .leading, spacing: 12.0) {
             HStack {
               Button(
@@ -51,7 +68,8 @@ struct UpdateView: View {
                   NSWorkspace.shared.open(URL(string: "https://karabiner-elements.pqrs.org/")!)
                 },
                 label: {
-                  Label("Open official website", systemImage: "house")
+                  AppLocalizedConstrainedLabel(
+                    "settings.update.official_website", systemImage: "house")
                 })
 
               Button(
@@ -60,7 +78,7 @@ struct UpdateView: View {
                     URL(string: "https://github.com/pqrs-org/Karabiner-Elements")!)
                 },
                 label: {
-                  Label("Open GitHub (source code)", systemImage: "hammer")
+                  AppLocalizedConstrainedLabel("settings.update.github", systemImage: "hammer")
                 })
             }
           }

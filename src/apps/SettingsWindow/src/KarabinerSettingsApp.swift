@@ -3,6 +3,8 @@ import SwiftUI
 
 @main
 struct KarabinerSettingsApp: App {
+  @ObservedObject private var settings = Settings.shared
+  @ObservedObject private var localization = AppLocalization.shared
   @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
   init() {
@@ -22,7 +24,7 @@ struct KarabinerSettingsApp: App {
     // Unregister old agents
     //
 
-    krbn_services_bootout_old_agents()
+    krbn_services_bootout_and_disable_old_agents()
 
     //
     // If Karabiner-Elements was manually terminated just before, the agents are in an unregistered state.
@@ -47,14 +49,14 @@ struct KarabinerSettingsApp: App {
 
   var body: some Scene {
     Window(
-      "Karabiner-Elements Settings",
+      AppLanguage.text("settings.general.window.title", locale: settings.uiLocale),
       id: "main",
       content: {
         ContentView()
       }
     )
     .commands {
-      FindCommands()
+      FindCommands(locale: settings.uiLocale)
     }
   }
 }

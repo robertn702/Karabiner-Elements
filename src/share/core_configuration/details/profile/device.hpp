@@ -2,6 +2,7 @@
 
 #include "../../configuration_json_helper.hpp"
 #include "exprtk_utility.hpp"
+#include "hidpp_button.hpp"
 #include "simple_modifications.hpp"
 #include <functional>
 #include <pqrs/string.hpp>
@@ -46,8 +47,6 @@ public:
          const default_values_resolver& resolve_default_values)
       : json_(json),
         identifiers_(make_device_identifiers(json)),
-        ignore_(false),
-        ignore_configured_(false),
         simple_modifications_(std::make_shared<simple_modifications>()),
         fn_function_keys_(std::make_shared<simple_modifications>()) {
     const auto default_values = resolve_default_values(identifiers_);
@@ -271,6 +270,20 @@ cos(radian) * m;
       }
     }
 
+    if (auto it = json.find("hidpp_button");
+        it != std::end(json)) {
+      try {
+        hidpp_button_ = hidpp_button(*it);
+      } catch (const pqrs::json::unmarshal_error& e) {
+        auto message = fmt::format("`hidpp_button` error: {0}", e.what());
+        if (error_handling == error_handling::strict) {
+          throw pqrs::json::unmarshal_error(message);
+        } else {
+          logger::get_logger()->warn(message);
+        }
+      }
+    }
+
     for (const auto& [key, value] : json.items()) {
       if (key == "simple_modifications") {
         try {
@@ -317,6 +330,12 @@ cos(radian) * m;
       j["ignore"] = ignore_;
     } else {
       j.erase("ignore");
+    }
+
+    if (hidpp_button_) {
+      j["hidpp_button"] = hidpp_button_->to_json();
+    } else {
+      j.erase("hidpp_button");
     }
 
     j["identifiers"] = identifiers_;
@@ -376,6 +395,11 @@ cos(radian) * m;
                                      values.manipulate_caps_lock_led);
 
     coordinate_between_properties();
+  }
+
+  // Absent (std::nullopt) means disabled.
+  [[nodiscard]] const std::optional<hidpp_button>& get_hidpp_button() const {
+    return hidpp_button_;
   }
 
   [[nodiscard]] const bool& get_manipulate_caps_lock_led() const {
@@ -703,7 +727,7 @@ private:
 
   nlohmann::json json_;
   device_identifiers identifiers_;
-  bool ignore_;
+  bool ignore_{false};
   // The default value of `ignore_` can change at runtime, most notably when the
   // profile's `ignore_pointing_device_events_by_default` setting changes. An
   // explicitly configured value can then temporarily equal the new default. Keep
@@ -726,7 +750,7 @@ private:
   // where it equals the new default. The value would then be omitted from JSON and
   // changed back to true along with the default in the fourth row. Keeping it
   // configured preserves the user's device-specific choice throughout the change.
-  bool ignore_configured_;
+  bool ignore_configured_{false};
   bool manipulate_caps_lock_led_;
   // macOS maps these two HID usages differently depending on the keyboard's
   // device type. This setting compensates when the physical device and the
@@ -749,6 +773,7 @@ private:
   bool mouse_discard_vertical_wheel_;
   bool mouse_discard_horizontal_wheel_;
   bool game_pad_swap_sticks_;
+  std::optional<hidpp_button> hidpp_button_;
 
   double game_pad_xy_stick_deadzone_;
   double game_pad_xy_stick_delta_magnitude_detection_threshold_;

@@ -1,6 +1,6 @@
 #pragma once
 
-// pqrs::osx::system_preferences_monitor v1.3.0
+// pqrs::osx::system_preferences_monitor v1.5.0
 
 // (C) Copyright Takayama Fumihiko 2019.
 // Distributed under the Boost Software License, Version 1.0.
@@ -13,6 +13,10 @@
 
 namespace pqrs::osx {
 class system_preferences_monitor final : public dispatcher::extra::dispatcher_client {
+private:
+  // Keep the guard first so member initialization failures also detach.
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_exception_guard_{*this};
+
 public:
   // Signals (invoked from the dispatcher thread)
 
@@ -20,8 +24,9 @@ public:
 
   // Methods
 
-  system_preferences_monitor(std::weak_ptr<dispatcher::dispatcher> weak_dispatcher) : dispatcher_client(weak_dispatcher),
-                                                                                      timer_(*this) {
+  system_preferences_monitor(std::weak_ptr<dispatcher::dispatcher> weak_dispatcher)
+      : dispatcher_client(weak_dispatcher) {
+    dispatcher_client_constructor_exception_guard_.initialize();
   }
 
   ~system_preferences_monitor() override {
@@ -64,7 +69,9 @@ private:
     });
   }
 
-  dispatcher::extra::timer timer_;
   std::shared_ptr<system_preferences::properties> last_properties_;
+
+  // Construct after potentially throwing members; destruction requires detach.
+  dispatcher::extra::timer timer_{*this};
 };
 } // namespace pqrs::osx

@@ -8,6 +8,7 @@ func hidValueMonitorStoppedCallback() {
 
 func hidValueArrivedCallback(
   _ deviceId: UInt64,
+  _ isVirtualKeyboard: Bool,
   _ usagePage: Int32,
   _ usage: Int32,
   _ integerValue: Int64,
@@ -141,6 +142,28 @@ func hidValueArrivedCallback(
       integerValue)
 
     //
+    // The virtual keyboard reports LED state changes as input for LED synchronization.
+    // These notifications cannot be remapped.
+    //
+
+    if isVirtualKeyboard, usagePage == 0x08 {
+      switch usage {
+      case 0x01:
+        entry.name = "num lock LED"
+      case 0x02:
+        entry.name = "caps lock LED"
+      default:
+        entry.name = "unsupported LED"
+      }
+      entry.nameJSON = "\"\(entry.name)\""
+      entry.eventType = integerValue != 0 ? "on" : "off"
+      entry.misc = "State notification (cannot be remapped)"
+      entry.isStateNotification = true
+      EventHistory.shared.append(entry, captureToken: captureToken)
+      return
+    }
+
+    //
     // Handle unknown events
     //
 
@@ -155,6 +178,7 @@ func hidValueArrivedCallback(
     //
 
     entry.name = momentarySwitchEventJsonString
+    entry.nameJSON = momentarySwitchEventJsonString
 
     //
     // modifierFlags
@@ -216,8 +240,10 @@ public class EventHistoryEntry: Identifiable, Equatable {
   public var usage = ""
   public var integerValue = ""
   public var name = ""
+  public var nameJSON = ""
   public var misc = ""
   public var isUnknownEvent = false
+  public var isStateNotification = false
 
   public init(timestamp: Date) {
     self.timestamp = timestamp
@@ -301,7 +327,7 @@ public class EventHistory: ObservableObject {
         string += "  {\n"
         string += "    \"timestamp\": \"\(entry.iso8601TimestampString)\",\n"
         string += "    \"type\": \"\(entry.eventType)\",\n"
-        string += "    \"name\": \(entry.name),\n"
+        string += "    \"name\": \(entry.nameJSON),\n"
         string += "    \"usagePage\": \"\(entry.usagePage)\",\n"
         string += "    \"usage\": \"\(entry.usage)\",\n"
         string += "    \"misc\": \"\(entry.misc)\"\n"

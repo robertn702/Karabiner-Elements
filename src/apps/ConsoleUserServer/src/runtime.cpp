@@ -89,7 +89,7 @@ void console_user_server_start(console_user_server_terminated_callback callback)
   // Register services
   //
 
-  krbn::services_utility::bootout_old_agents();
+  krbn::services_utility::bootout_and_disable_old_agents();
   // Register services when console_user_server starts to avoid missing registrations,
   // for example when new services are added in an update.
   krbn::services_utility::register_core_daemons();
@@ -173,6 +173,12 @@ void console_user_server_register_notification_message_callback(console_user_ser
 void console_user_server_select_profile(size_t index) {
   if (ui_bridge_instance) {
     ui_bridge_instance->select_profile(index);
+  }
+}
+
+void console_user_server_set_resolved_ui_language(const char* language) {
+  if (ui_bridge_instance && language) {
+    ui_bridge_instance->async_set_resolved_ui_language(language);
   }
 }
 

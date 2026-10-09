@@ -15,29 +15,33 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
   case expert
   case action
   case log
+  case changedSettings
   case systemExtensions
   case setup
+  case debug
 
   var id: Self { self }
 
   var title: String {
     switch self {
-    case .simpleModifications: return "Simple Modifications"
-    case .functionKeys: return "Function Keys"
-    case .complexModifications: return "Complex Modifications"
-    case .complexModificationsAdvanced: return "Parameters"
-    case .devices: return "Devices"
-    case .virtualKeyboard: return "Virtual Keyboard"
-    case .profiles: return "Profiles"
-    case .ui: return "UI"
-    case .update: return "Update"
-    case .misc: return "Misc"
-    case .uninstall: return "Uninstall"
-    case .expert: return "Expert"
-    case .action: return "Quit, Restart"
-    case .log: return "Log"
-    case .systemExtensions: return "System Extensions"
-    case .setup: return "Setup"
+    case .simpleModifications: return "settings.sidebar.item.simple_modifications"
+    case .functionKeys: return "settings.sidebar.item.function_keys"
+    case .complexModifications: return "settings.sidebar.item.complex_modifications"
+    case .complexModificationsAdvanced: return "settings.sidebar.item.parameters"
+    case .devices: return "settings.sidebar.item.devices"
+    case .virtualKeyboard: return "settings.sidebar.item.virtual_keyboard"
+    case .profiles: return "settings.sidebar.item.profiles"
+    case .ui: return "settings.sidebar.item.ui"
+    case .update: return "settings.sidebar.item.update"
+    case .misc: return "settings.sidebar.item.misc"
+    case .uninstall: return "settings.sidebar.item.uninstall"
+    case .expert: return "settings.sidebar.item.expert"
+    case .action: return "settings.sidebar.item.quit_restart"
+    case .changedSettings: return "settings.sidebar.item.changed_settings"
+    case .log: return "settings.sidebar.item.log"
+    case .systemExtensions: return "settings.sidebar.item.system_extensions"
+    case .setup: return "settings.sidebar.item.setup"
+    case .debug: return "settings.debug.title"
     }
   }
 
@@ -56,18 +60,24 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
     case .uninstall: return "trash"
     case .expert: return "flame"
     case .action: return "xmark.rectangle"
+    case .changedSettings: return "slider.horizontal.3"
     case .log: return "list.bullet.rectangle"
     case .systemExtensions: return "puzzlepiece.extension"
     case .setup: return "checklist"
+    case .debug: return "ladybug"
     }
   }
 }
 
 struct ContentMainView: View {
+  @AppLocalizationContext private var localized
+  @ObservedObject private var localization = AppLocalization.shared
   @ObservedObject private var contentViewStates = ContentViewStates.shared
   @ObservedObject private var settings = Settings.shared
   @ObservedObject private var systemPreferences = SystemPreferences.shared
 
+  @State private var optionPressed = false
+  @State private var layoutResetRequest = UUID()
   @State private var selectedSidebarItem: SidebarItem = .simpleModifications
 
   struct SidebarSection {
@@ -77,7 +87,7 @@ struct ContentMainView: View {
 
   let sections: [SidebarSection] = [
     SidebarSection(
-      title: "Modifications",
+      title: "settings.sidebar.section.modifications",
       items: [
         .simpleModifications,
         .functionKeys,
@@ -86,7 +96,7 @@ struct ContentMainView: View {
       ]
     ),
     SidebarSection(
-      title: "Configurations",
+      title: "settings.sidebar.section.configurations",
       items: [
         .devices,
         .virtualKeyboard,
@@ -95,7 +105,7 @@ struct ContentMainView: View {
       ]
     ),
     SidebarSection(
-      title: "Maintenance",
+      title: "settings.sidebar.section.maintenance",
       items: [
         .update,
         .misc,
@@ -105,9 +115,10 @@ struct ContentMainView: View {
       ]
     ),
     SidebarSection(
-      title: "Diagnostic",
+      title: "settings.sidebar.section.diagnostic",
       items: [
         .log,
+        .changedSettings,
         .systemExtensions,
         .setup,
       ]
@@ -124,7 +135,15 @@ struct ContentMainView: View {
                 sidebarRow(item)
               }
             } header: {
-              Text(sections[section].title)
+              AppLocalizedText(sections[section].title)
+            }
+          }
+          if optionPressed || selectedSidebarItem == .debug {
+            Section {
+              sidebarRow(.debug)
+              SidebarLayoutResetButton(request: $layoutResetRequest)
+            } header: {
+              AppLocalizedText("settings.debug.section")
             }
           }
         }
@@ -141,8 +160,12 @@ struct ContentMainView: View {
             selectedSidebarItem = newValue
           }
         }
-        .navigationSplitViewColumnWidth(250)
-        .listStyle(.sidebar)
+        .modifier(
+          SidebarStyle(
+            resetRequest: layoutResetRequest,
+            defaultContentSize: ContentView.defaultContentSize
+          )
+        )
       },
       detail: {
         VStack(alignment: .leading, spacing: 0) {
@@ -152,8 +175,8 @@ struct ContentMainView: View {
                 selectedSidebarItem = .expert
               },
               label: {
-                Label(
-                  "The unsafe configuration is enabled, so the safeguard feature is currently inactive.",
+                AppLocalizedConstrainedLabel(
+                  "settings.expert.unsafe_banner",
                   systemImage: "exclamationmark.triangle"
                 )
               }
@@ -167,23 +190,16 @@ struct ContentMainView: View {
 
           if systemPreferences.virtualHIDKeyboardModifierMappingsExists {
             VStack(alignment: .leading) {
-              Label(
-                """
-                macOS also remaps modifier keys. It's recommended to restore defaults and configure them via Karabiner-Elements.
-
-                You can reset the macOS setting by following steps:
-                1. Open System Settings and go to Keyboard Shortcuts… > Modifier Keys.
-                2. Choose Karabiner DriverKit VirtualHIDKeyboard.
-                3. Click the Restore Defaults button.
-                """,
+              AppLocalizedLabel(
+                "settings.general.modifier_mappings.reset_hint",
                 systemImage: WarningBorder.icon
               )
 
               OpenSystemSettingsButton(
                 url: "x-apple.systempreferences:com.apple.preference.keyboard",
                 label: {
-                  Label(
-                    "Open System Settings…",
+                  AppLocalizedConstrainedLabel(
+                    "settings.setup.system_settings.open",
                     systemImage: "arrow.up.forward.app"
                   )
                 }
@@ -196,9 +212,10 @@ struct ContentMainView: View {
 
           if settings.saveErrorMessage != "" {
             VStack(alignment: .leading) {
-              Label(
-                "Save failed:\n\(settings.saveErrorMessage)",
-                systemImage: ErrorBorder.icon
+              AppLocalizedLabel(
+                "settings.general.save.failed",
+                systemImage: ErrorBorder.icon,
+                arguments: ["error": settings.saveErrorMessage]
               )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -233,27 +250,54 @@ struct ContentMainView: View {
             ExpertView()
           case .action:
             ActionView()
+          case .changedSettings:
+            ChangedSettingsView()
           case .log:
             LogView()
           case .systemExtensions:
             SystemExtensionsView()
           case .setup:
             SetupView()
+          case .debug:
+            DebugAlertsView()
           }
         }
+        // Include banners so fixed-size localized text cannot inflate the detail pane's minimum height.
+        .frame(minHeight: 0, maxHeight: .infinity, alignment: .topLeading)
       }
     )
+    .disabled(settings.isStructuralChangePending)
+    .background(OptionKeyObserver(isPressed: $optionPressed).frame(width: 0, height: 0))
+    .toolbar {
+      ToolbarItem(placement: .primaryAction) {
+        LanguagePicker(
+          selection: $settings.configuration.globalConfiguration.uiLanguage,
+          languages: AppLanguage.availableLanguages()
+        )
+        .fixedSize()
+        .onAppear { resetUnavailableLanguage() }
+        .onChange(of: settings.configurationLoaded) { _ in resetUnavailableLanguage() }
+        .onChange(of: settings.configuration.globalConfiguration.uiLanguage) { _ in
+          resetUnavailableLanguage()
+        }
+        .onChange(of: localization.catalog.languages) { _ in resetUnavailableLanguage() }
+      }
+
+    }
+  }
+
+  private func resetUnavailableLanguage() {
+    // Wait for both settings and translations before validating the saved selection.
+    guard settings.configurationLoaded, !localization.catalog.strings.isEmpty else { return }
+    let selected = settings.configuration.globalConfiguration.uiLanguage
+    if selected != "auto" && !AppLanguage.availableLanguages().contains(selected) {
+      settings.configuration.globalConfiguration.uiLanguage = "auto"
+    }
   }
 
   @ViewBuilder
   private func sidebarRow(_ item: SidebarItem) -> some View {
-    HStack(spacing: 8.0) {
-      Image(systemName: item.systemImage)
-        .frame(width: 18.0)
-
-      Text(item.title)
-    }
-    .padding(.vertical, 2.0)
-    .tag(item)
+    SidebarLabel(title: item.title, systemImage: item.systemImage)
+      .tag(item)
   }
 }

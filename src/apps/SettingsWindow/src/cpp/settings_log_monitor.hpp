@@ -5,18 +5,26 @@
 #include "logger.hpp"
 #include "settings.hpp"
 #include <mutex>
+#include <pqrs/dispatcher.hpp>
 #include <pqrs/spdlog.hpp>
 #include <set>
 #include <tuple>
 
 class settings_log_monitor final : public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   settings_log_monitor(const settings_log_monitor&) = delete;
 
   explicit settings_log_monitor(krbn_log_messages_updated_t callback)
-      : dispatcher_client(),
-        callback_(callback) {
-    start();
+      : callback_(callback) {
+    dispatcher_client_constructor_guard_.initialize(
+        [&] {
+          start();
+        },
+        [this] {
+          stop();
+        });
   }
 
   ~settings_log_monitor() override {

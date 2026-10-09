@@ -7,21 +7,28 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <pqrs/dispatcher.hpp>
 #include <utility>
 
 class settings_core_service_daemon_client final : public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   settings_core_service_daemon_client(const settings_core_service_daemon_client&) = delete;
 
   settings_core_service_daemon_client(std::function<void(const krbn::connected_devices&)> connected_devices_updated_callback,
                                       krbn_core_service_daemon_client_connected_devices_received_t connected_devices_received_callback,
                                       krbn_core_service_daemon_client_system_variables_received_t system_variables_received_callback)
-      : dispatcher_client(),
-        connected_devices_updated_callback_(std::move(connected_devices_updated_callback)),
+      : connected_devices_updated_callback_(std::move(connected_devices_updated_callback)),
         connected_devices_received_callback_(connected_devices_received_callback),
-        system_variables_received_callback_(system_variables_received_callback),
-        system_variables_timer_(*this) {
-    start();
+        system_variables_received_callback_(system_variables_received_callback) {
+    dispatcher_client_constructor_guard_.initialize(
+        [&] {
+          start();
+        },
+        [this] {
+          cleanup();
+        });
   }
 
   ~settings_core_service_daemon_client() override {
@@ -31,15 +38,7 @@ public:
   void unregister_callbacks_and_detach() {
     std::call_once(unregister_callbacks_and_detach_once_, [this] {
       detach_from_dispatcher([this] {
-        system_variables_timer_.stop();
-
-        auto client = std::atomic_load(&core_service_daemon_client_);
-        std::atomic_store(&core_service_daemon_client_,
-                          std::shared_ptr<krbn::core_service_daemon_client>());
-
-        if (client) {
-          client->unregister_callbacks_and_detach();
-        }
+        cleanup();
       });
     });
   }
@@ -108,7 +107,8 @@ public:
       }
     });
 
-    std::atomic_store(&core_service_daemon_client_, client);
+    std::atomic_store(&core_service_daemon_client_,
+                      client);
   }
 
   void stop() {
@@ -131,6 +131,18 @@ public:
   }
 
 private:
+  void cleanup() {
+    system_variables_timer_.stop();
+
+    auto client = std::atomic_load(&core_service_daemon_client_);
+    std::atomic_store(&core_service_daemon_client_,
+                      std::shared_ptr<krbn::core_service_daemon_client>());
+
+    if (client) {
+      client->unregister_callbacks_and_detach();
+    }
+  }
+
   void async_get_system_variables() const {
     if (auto client = std::atomic_load(&core_service_daemon_client_)) {
       client->async_get_system_variables();
@@ -141,6 +153,8 @@ private:
   std::shared_ptr<krbn::core_service_daemon_client> core_service_daemon_client_;
   const krbn_core_service_daemon_client_connected_devices_received_t connected_devices_received_callback_;
   const krbn_core_service_daemon_client_system_variables_received_t system_variables_received_callback_;
-  pqrs::dispatcher::extra::timer system_variables_timer_;
   std::once_flag unregister_callbacks_and_detach_once_;
+
+  // Construct after potentially throwing members; destruction requires detach.
+  pqrs::dispatcher::extra::timer system_variables_timer_{*this};
 };

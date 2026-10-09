@@ -231,12 +231,16 @@ main();
         rule_t rule(json,
                     parameters,
                     krbn::core_configuration::error_handling::strict);
-        expect(3 == rule.get_manipulators().size());
-        expect("example"s == rule.get_description());
+        expect(rule.get_manipulators().empty());
+        expect("JavaScript"s == rule.get_description());
         expect(false == rule.get_enabled());
         expect(rule_t::code_type::javascript == rule.get_code_type());
         expect(js == rule.get_code_string());
         expect(json == rule.to_json());
+        rule.set_enabled(true);
+        expect(rule.get_enabled());
+        expect(3 == rule.get_manipulators().size());
+        expect("example"s == rule.get_description());
       }
 
       // Ignore enabled in the evaluated JSON.
@@ -271,6 +275,24 @@ main();
                    {"eval_js", js_with_enabled},
                }) == rule->to_json());
       }
+    }
+
+    // Disabled JavaScript is not evaluated, even when it throws. Enabling it
+    // reports the error without changing the stored rule or enabled state.
+    {
+      auto json = nlohmann::json::object({
+          {"enabled", false},
+          {"description", "Disabled script"},
+          {"eval_js", "throw new Error('must not execute');"},
+      });
+      rule_t rule(json, std::make_shared<parameters_t>(), krbn::core_configuration::error_handling::strict);
+      expect(!rule.get_enabled());
+      expect(rule.get_manipulators().empty());
+      expect(rule.get_description() == "Disabled script");
+      expect(rule.to_json() == json);
+      expect(throws([&] { rule.set_enabled(true); }));
+      expect(!rule.get_enabled());
+      expect(rule.to_json() == json);
     }
 
     // search_text uses the evaluated manipulators, not the JavaScript source.

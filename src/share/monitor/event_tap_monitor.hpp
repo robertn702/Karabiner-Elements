@@ -9,6 +9,7 @@
 #include "keyboard_suppression.hpp"
 #include "logger.hpp"
 #include "pressed_keys_manager.hpp"
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <deque>
@@ -24,6 +25,8 @@
 
 namespace krbn {
 class event_tap_monitor final : pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   // Signals (invoked from the shared dispatcher thread)
 
@@ -37,11 +40,13 @@ public:
   event_tap_monitor(bool cgeventtap_fallback_enabled,
                     pqrs::not_null_shared_ptr_t<pressed_keys_manager> virtual_hid_keyboard_pressed_keys_manager,
                     pqrs::not_null_shared_ptr_t<keyboard_suppression> keyboard_suppression)
-      : dispatcher_client(),
-        cgeventtap_fallback_enabled_(cgeventtap_fallback_enabled),
+      : cgeventtap_fallback_enabled_(cgeventtap_fallback_enabled),
         virtual_hid_keyboard_pressed_keys_manager_(virtual_hid_keyboard_pressed_keys_manager),
         keyboard_suppression_(keyboard_suppression) {
-    cf_run_loop_thread_ = std::make_unique<pqrs::cf::run_loop_thread>(pqrs::cf::run_loop_thread::failure_policy::exit);
+    dispatcher_client_constructor_guard_.initialize(
+        [&] {
+          cf_run_loop_thread_ = std::make_unique<pqrs::cf::run_loop_thread>(pqrs::cf::run_loop_thread::failure_policy::exit);
+        });
   }
 
   ~event_tap_monitor() {
@@ -60,6 +65,10 @@ public:
     cf_run_loop_thread_ = nullptr;
 
     logger::get_logger()->debug("event_tap_monitor terminated");
+  }
+
+  void set_virtual_hid_keyboard_is_iso(bool value) {
+    virtual_hid_keyboard_is_iso_.store(value);
   }
 
   void async_stop(std::function<void()> completion) {
@@ -413,31 +422,34 @@ private:
 
   bool should_skip_keyboard_event(CGEventType type,
                                   CGEventRef _Nullable event,
-                                  std::pair<event_type, event_queue::event>& normalized_keyboard_event) {
+                                  const std::pair<event_type, event_queue::event>& normalized_keyboard_event) {
     if (!cgeventtap_fallback_enabled_ ||
         !event) {
       return false;
+    }
+
+    // Convert only the lookup copy; fallback input and the loop guard retain the
+    // original event because the event tap does not identify the source device.
+
+    std::optional<momentary_switch_event> event_for_virtual_hid_matching;
+    if (auto m = normalized_keyboard_event.second.get_if<momentary_switch_event>()) {
+      event_for_virtual_hid_matching = event_tap_utility::make_event_for_virtual_hid_matching(*m,
+                                                                                              virtual_hid_keyboard_is_iso_.load());
     }
 
     // Pass through auto-repeat only if the same key is being held by virtual HID.
     // (e.g., do not pass through physical escape repeat when escape is remapped to left_shift.)
     if (type == kCGEventKeyDown &&
         CGEventGetIntegerValueField(event, kCGKeyboardEventAutorepeat) != 0) {
-      if (auto m = normalized_keyboard_event.second.template get_if<momentary_switch_event>()) {
-        return virtual_hid_keyboard_pressed_keys_manager_->contains(*m);
-      }
-
-      return true;
+      return event_for_virtual_hid_matching ? virtual_hid_keyboard_pressed_keys_manager_->contains(*event_for_virtual_hid_matching) : true;
     }
-
-    auto now = pqrs::osx::chrono::mach_absolute_time_point();
 
     // Skip keyboard events emitted from virtual HID so they bypass Karabiner
     // processing and pass through to apps.
-    if (auto m = normalized_keyboard_event.second.template get_if<momentary_switch_event>()) {
-      return keyboard_suppression_->consume(*m,
+    if (event_for_virtual_hid_matching) {
+      return keyboard_suppression_->consume(*event_for_virtual_hid_matching,
                                             normalized_keyboard_event.first,
-                                            now);
+                                            pqrs::osx::chrono::mach_absolute_time_point());
     }
 
     return false;
@@ -445,6 +457,8 @@ private:
 
   std::unique_ptr<pqrs::cf::run_loop_thread> cf_run_loop_thread_;
   bool cgeventtap_fallback_enabled_;
+  // Written by the dispatcher and read by the event tap run-loop thread.
+  std::atomic<bool> virtual_hid_keyboard_is_iso_{false};
   pqrs::not_null_shared_ptr_t<pressed_keys_manager> virtual_hid_keyboard_pressed_keys_manager_;
   pqrs::not_null_shared_ptr_t<keyboard_suppression> keyboard_suppression_;
   // event_tap_mutex_ needs synchronization because it is accessed from both the run loop thread and the dispatcher thread.

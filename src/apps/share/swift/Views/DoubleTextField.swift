@@ -22,7 +22,7 @@ struct DoubleTextField: View {
     width: CGFloat
   ) {
     _value = value
-    text = String(value.wrappedValue)
+    _text = State(initialValue: String(value.wrappedValue))
 
     self.step = step
     self.range = range
@@ -57,12 +57,13 @@ struct DoubleTextField: View {
       }
 
       if error {
-        Label(
-          String(
-            format: "must be between %.\(maximumFractionDigits)f and %.\(maximumFractionDigits)f",
-            range.lowerBound,
-            range.upperBound),
-          systemImage: ErrorBorder.icon
+        AppLocalizedLabel(
+          "shared.validation.number_range",
+          systemImage: ErrorBorder.icon,
+          arguments: [
+            "lower": String(format: "%.\(maximumFractionDigits)f", range.lowerBound),
+            "upper": String(format: "%.\(maximumFractionDigits)f", range.upperBound),
+          ]
         )
         .modifier(ErrorBorder(padding: 4.0))
       }

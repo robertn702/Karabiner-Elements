@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct DevicesGamePadSettingsView: View {
+  @AppLocalizationContext private var localized
   let connectedDevice: ConnectedDevice
   @Binding var deviceConfiguration: SettingsConfiguration.Device
   @Binding var showing: Bool
@@ -38,58 +39,64 @@ struct DevicesGamePadSettingsView: View {
     ZStack(alignment: .topLeading) {
       VStack(alignment: .leading, spacing: 12.0) {
         Text(
-          "\(connectedDevice.productName) (\(connectedDevice.manufacturerName))"
+          "\(connectedDevice.localizedProductName(localized)) (\(connectedDevice.localizedManufacturerName(localized)))"
         )
-        .padding(.leading, 40)
-        .padding(.top, 20)
+        .padding(.leading, 40.0)
+        .padding(.top, 20.0)
 
-        TabView {
-          XYStickTabView(
-            deviceConfiguration: $deviceConfiguration,
-            defaults: settings.configuration.deviceDefaults,
-            xFormula: formulaBinding(
-              .x, value: $gamePadStickXFormula, error: $gamePadStickXFormulaError),
-            xFormulaError: $gamePadStickXFormulaError,
-            resetXFormula: { resetFormula(.x) },
-            yFormula: formulaBinding(
-              .y, value: $gamePadStickYFormula, error: $gamePadStickYFormulaError),
-            yFormulaError: $gamePadStickYFormulaError,
-            resetYFormula: { resetFormula(.y) }
-          )
-          .padding()
-          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-          .tabItem {
-            Text("XY stick")
-          }
-
-          WheelsStickTabView(
-            deviceConfiguration: $deviceConfiguration,
-            defaults: settings.configuration.deviceDefaults,
-            verticalWheelFormula: formulaBinding(
-              .verticalWheel,
-              value: $gamePadStickVerticalWheelFormula,
-              error: $gamePadStickVerticalWheelFormulaError),
-            verticalWheelFormulaError: $gamePadStickVerticalWheelFormulaError,
-            resetVerticalWheelFormula: { resetFormula(.verticalWheel) },
-            horizontalWheelFormula: formulaBinding(
-              .horizontalWheel,
-              value: $gamePadStickHorizontalWheelFormula,
-              error: $gamePadStickHorizontalWheelFormulaError),
-            horizontalWheelFormulaError: $gamePadStickHorizontalWheelFormulaError,
-            resetHorizontalWheelFormula: { resetFormula(.horizontalWheel) }
-          )
-          .padding()
-          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-          .tabItem {
-            Text("Wheels stick")
-          }
-
-          OthersTabView(deviceConfiguration: $deviceConfiguration)
-            .padding()
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .tabItem {
-              Text("Others")
+        ScrollView {
+          LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+            Section {
+              XYStickSettingsView(
+                deviceConfiguration: $deviceConfiguration,
+                defaults: settings.configuration.deviceDefaults,
+                xFormula: formulaBinding(
+                  .x, value: $gamePadStickXFormula, error: $gamePadStickXFormulaError),
+                xFormulaError: $gamePadStickXFormulaError,
+                resetXFormula: { resetFormula(.x) },
+                yFormula: formulaBinding(
+                  .y, value: $gamePadStickYFormula, error: $gamePadStickYFormulaError),
+                yFormulaError: $gamePadStickYFormulaError,
+                resetYFormula: { resetFormula(.y) }
+              )
+              .padding(.top, 12.0)
+              .padding(.bottom, 60.0)
+            } header: {
+              sectionHeader("settings.devices.gamepad.xy_stick")
             }
+
+            Section {
+              WheelsStickSettingsView(
+                deviceConfiguration: $deviceConfiguration,
+                defaults: settings.configuration.deviceDefaults,
+                verticalWheelFormula: formulaBinding(
+                  .verticalWheel,
+                  value: $gamePadStickVerticalWheelFormula,
+                  error: $gamePadStickVerticalWheelFormulaError),
+                verticalWheelFormulaError: $gamePadStickVerticalWheelFormulaError,
+                resetVerticalWheelFormula: { resetFormula(.verticalWheel) },
+                horizontalWheelFormula: formulaBinding(
+                  .horizontalWheel,
+                  value: $gamePadStickHorizontalWheelFormula,
+                  error: $gamePadStickHorizontalWheelFormulaError),
+                horizontalWheelFormulaError: $gamePadStickHorizontalWheelFormulaError,
+                resetHorizontalWheelFormula: { resetFormula(.horizontalWheel) }
+              )
+              .padding(.top, 12.0)
+              .padding(.bottom, 60.0)
+            } header: {
+              sectionHeader("settings.devices.gamepad.wheels_stick")
+            }
+
+            Section {
+              OthersSettingsView(deviceConfiguration: $deviceConfiguration)
+                .padding(.top, 12.0)
+            } header: {
+              sectionHeader("settings.devices.gamepad.others")
+            }
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding()
         }
       }
 
@@ -123,6 +130,12 @@ struct DevicesGamePadSettingsView: View {
     }
   }
 
+  private func sectionHeader(_ key: String) -> some View {
+    AppLocalizedText(key)
+      .font(.title2)
+      .sectionHeaderStyle()
+  }
+
   private func formulaBinding(
     _ formula: Settings.GamePadStickFormula,
     value: Binding<String>,
@@ -132,15 +145,22 @@ struct DevicesGamePadSettingsView: View {
       get: { value.wrappedValue },
       set: { newValue in
         value.wrappedValue = newValue
-        error.wrappedValue = !settings.setGamePadStickFormula(
-          formula,
-          value: newValue,
-          connectedDevice: connectedDevice)
+        Task {
+          let valid = await settings.setGamePadStickFormula(
+            formula,
+            value: newValue,
+            connectedDevice: connectedDevice)
+          if value.wrappedValue == newValue { error.wrappedValue = !valid }
+        }
       })
   }
 
   private func resetFormula(_ formula: Settings.GamePadStickFormula) {
-    settings.resetGamePadStickFormula(formula, connectedDevice: connectedDevice)
+    Task { await resetFormulaAndUpdate(formula) }
+  }
+
+  private func resetFormulaAndUpdate(_ formula: Settings.GamePadStickFormula) async {
+    await settings.resetGamePadStickFormula(formula, connectedDevice: connectedDevice)
 
     guard let device = settings.deviceConfiguration(connectedDevice) else { return }
     switch formula {
@@ -159,7 +179,7 @@ struct DevicesGamePadSettingsView: View {
     }
   }
 
-  struct XYStickTabView: View {
+  struct XYStickSettingsView: View {
     @Binding var deviceConfiguration: SettingsConfiguration.Device
     let defaults: SettingsConfiguration.DeviceDefaults
     @Binding var xFormula: String
@@ -193,15 +213,17 @@ struct DevicesGamePadSettingsView: View {
 
         HStack(spacing: 20.0) {
           FormulaView(
-            name: "X formula",
+            name: "settings.devices.gamepad.x_formula",
             value: $xFormula,
+            defaultValue: defaults.gamePadStickXFormula,
             error: $xFormulaError,
             resetFunction: resetXFormula
           )
 
           FormulaView(
-            name: "Y formula",
+            name: "settings.devices.gamepad.y_formula",
             value: $yFormula,
+            defaultValue: defaults.gamePadStickYFormula,
             error: $yFormulaError,
             resetFunction: resetYFormula
           )
@@ -211,7 +233,7 @@ struct DevicesGamePadSettingsView: View {
     }
   }
 
-  struct WheelsStickTabView: View {
+  struct WheelsStickSettingsView: View {
     @Binding var deviceConfiguration: SettingsConfiguration.Device
     let defaults: SettingsConfiguration.DeviceDefaults
     @Binding var verticalWheelFormula: String
@@ -245,15 +267,17 @@ struct DevicesGamePadSettingsView: View {
 
         HStack(spacing: 20.0) {
           FormulaView(
-            name: "vertical wheel formula",
+            name: "settings.devices.gamepad.vertical_formula",
             value: $verticalWheelFormula,
+            defaultValue: defaults.gamePadStickVerticalWheelFormula,
             error: $verticalWheelFormulaError,
             resetFunction: resetVerticalWheelFormula
           )
 
           FormulaView(
-            name: "horizontal wheel formula",
+            name: "settings.devices.gamepad.horizontal_formula",
             value: $horizontalWheelFormula,
+            defaultValue: defaults.gamePadStickHorizontalWheelFormula,
             error: $horizontalWheelFormulaError,
             resetFunction: resetHorizontalWheelFormula
           )
@@ -263,13 +287,13 @@ struct DevicesGamePadSettingsView: View {
     }
   }
 
-  struct OthersTabView: View {
+  struct OthersSettingsView: View {
     @Binding var deviceConfiguration: SettingsConfiguration.Device
 
     var body: some View {
-      VStack(alignment: .leading, spacing: 40.0) {
+      VStack(alignment: .leading, spacing: 12.0) {
         Toggle(isOn: $deviceConfiguration.gamePadSwapSticks) {
-          Text("Swap gamepad XY and wheels sticks")
+          AppLocalizedText("settings.devices.gamepad.swap_sticks")
         }
         .switchToggleStyle(controlSize: .mini, font: .callout)
 
@@ -294,7 +318,7 @@ struct DevicesGamePadSettingsView: View {
     var body: some View {
       Grid(alignment: .leadingFirstTextBaseline) {
         GridRow {
-          Text("deadzone:")
+          AppLocalizedText("settings.devices.gamepad.deadzone")
             .gridColumnAlignment(.trailing)
 
           DoubleTextField(
@@ -304,13 +328,13 @@ struct DevicesGamePadSettingsView: View {
             maximumFractionDigits: 2,
             width: 60)
 
-          Text(
-            "(Default: \(String(format: "%.2f", deadzoneDefaultValue)))"
-          )
+          AppLocalizedText(
+            "settings.general.defaults.value",
+            arguments: ["value": String(format: "%.2f", deadzoneDefaultValue)])
         }
 
         GridRow {
-          Text("Delta magnitude detection threshold:")
+          AppLocalizedText("settings.devices.gamepad.delta_threshold")
 
           DoubleTextField(
             value: $deltaMagnitudeDetectionThreshold,
@@ -319,13 +343,15 @@ struct DevicesGamePadSettingsView: View {
             maximumFractionDigits: 2,
             width: 60)
 
-          Text(
-            "(Default: \(String(format: "%.2f", deltaMagnitudeDetectionThresholdDefaultValue)))"
-          )
+          AppLocalizedText(
+            "settings.general.defaults.value",
+            arguments: [
+              "value": String(format: "%.2f", deltaMagnitudeDetectionThresholdDefaultValue)
+            ])
         }
 
         GridRow {
-          Text("Continued movement absolute magnitude threshold:")
+          AppLocalizedText("settings.devices.gamepad.continued_threshold")
 
           DoubleTextField(
             value: $continuedMovementAbsoluteMagnitudeThreshold,
@@ -334,13 +360,16 @@ struct DevicesGamePadSettingsView: View {
             maximumFractionDigits: 2,
             width: 60)
 
-          Text(
-            "(Default: \(String(format: "%.2f", continuedMovementAbsoluteMagnitudeThresholdDefaultValue)))"
-          )
+          AppLocalizedText(
+            "settings.general.defaults.value",
+            arguments: [
+              "value": String(
+                format: "%.2f", continuedMovementAbsoluteMagnitudeThresholdDefaultValue)
+            ])
         }
 
         GridRow {
-          Text("Continued movement interval milliseconds:")
+          AppLocalizedText("settings.devices.gamepad.continued_interval")
 
           IntTextField(
             value: $continuedMovementIntervalMilliseconds,
@@ -348,7 +377,9 @@ struct DevicesGamePadSettingsView: View {
             step: 1,
             width: 60)
 
-          Text("(Default: \(continuedMovementIntervalMillisecondsDefaultValue))")
+          AppLocalizedText(
+            "settings.general.defaults.value",
+            arguments: ["value": String(continuedMovementIntervalMillisecondsDefaultValue)])
         }
       }
     }
@@ -357,17 +388,18 @@ struct DevicesGamePadSettingsView: View {
   struct FormulaView: View {
     let name: String
     @Binding var value: String
+    let defaultValue: String
     @Binding var error: Bool
     let resetFunction: () -> Void
 
     var body: some View {
       VStack {
         HStack {
-          Text(name)
+          AppLocalizedText(name)
 
           if error {
-            Label(
-              "Invalid formula",
+            AppLocalizedLabel(
+              "settings.devices.gamepad.invalid_formula",
               systemImage: ErrorBorder.icon
             )
             .modifier(ErrorBorder(padding: 4.0))
@@ -381,15 +413,21 @@ struct DevicesGamePadSettingsView: View {
               resetFunction()
             },
             label: {
-              Label("Reset to the default formula", systemImage: "trash")
-                .buttonLabelStyle()
+              AppLocalizedConstrainedLabel(
+                "settings.devices.gamepad.reset_formula", systemImage: "trash"
+              )
+              .buttonLabelStyle()
             }
           )
           .deleteButtonStyle()
+          .disabled(value == defaultValue)
         }
 
         TextEditor(text: $value)
-          .frame(height: 250.0)
+          .padding(8)
+          .frame(height: 200.0)
+          .background(Color(NSColor.textBackgroundColor))
+          .border(Color(NSColor.separatorColor), width: 2)
       }
     }
   }

@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 struct ProfilesView: View {
+  @AppLocalizationContext private var localized
   @ObservedObject private var settings = Settings.shared
   @State private var moveDisabled: Bool = true
   @State private var showingSheet = false
@@ -16,23 +17,25 @@ struct ProfilesView: View {
             settings.appendProfile()
           },
           label: {
-            AccentColorIconLabel(title: "Add new profile", systemImage: "plus.circle.fill")
+            AccentColorIconLabel(
+              title: localized("settings.profiles.add"), systemImage: "plus.circle.fill")
           }
         )
-
-        Spacer()
-
-        if settings.configuration.profiles.count > 1 {
-          HStack {
-            Text("You can reorder list by dragging")
-            Image(systemName: "arrow.up.arrow.down.square.fill")
-              .resizable(resizingMode: .stretch)
-              .frame(width: 16.0, height: 16.0)
-            Text("icon")
-          }
-        }
       }
       .padding()
+
+      Divider()
+
+      HStack {
+        if settings.configuration.profiles.count > 1 {
+          AppLocalizedLabel(
+            "settings.general.shared.reorder_hint",
+            systemImage: "arrow.up.arrow.down.square.fill"
+          )
+        }
+      }
+      .padding(.horizontal)
+      .padding(.top)
 
       List {
         ForEach($settings.configuration.profiles) { $profile in
@@ -90,7 +93,8 @@ struct ProfilesView: View {
                   showingSheet = true
                 },
                 label: {
-                  Label("Rename", systemImage: "pencil.circle.fill")
+                  AppLocalizedConstrainedLabel(
+                    "shared.action.rename", systemImage: "pencil.circle.fill")
                 })
 
               Button(
@@ -98,7 +102,8 @@ struct ProfilesView: View {
                   settings.duplicateProfile(profile)
                 },
                 label: {
-                  Label("Duplicate", systemImage: "person.2.fill")
+                  AppLocalizedConstrainedLabel(
+                    "shared.action.duplicate", systemImage: "person.2.fill")
                 })
 
               HStack {
@@ -129,7 +134,7 @@ struct ProfilesView: View {
             }
           }
           .listOverlayDivider()
-          .moveDisabled(moveDisabled)
+          .moveDisabled(settings.isStructuralChangePending || moveDisabled)
         }
         .onMove { indices, destination in
           if let first = indices.first {
@@ -145,9 +150,11 @@ struct ProfilesView: View {
         showing: $showingSheet,
         onEditingCancelledByExternalChange: {
           ContentViewStates.shared.showToast(
-            "The editor was closed because the profile changed."
+            localized("settings.complex_modifications.editor.profile_changed")
           )
-        })
+        }
+      )
+      .modifier(SettingsLanguage())
     }
   }
 }

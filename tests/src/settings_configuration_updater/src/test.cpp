@@ -44,10 +44,12 @@ int main() {
     // and machine-specific settings.
     auto patch = nlohmann::json::object();
     auto& global_patch = patch["global_configuration"];
+    global_patch["ui_language"] = "en";
     global_patch["check_for_updates"] = false;
     global_patch["show_in_menu_bar"] = false;
     global_patch["show_profile_name_in_menu_bar"] = true;
     global_patch["show_additional_menu_items"] = true;
+    global_patch["show_quit_confirmation_menu"] = false;
     global_patch["enable_notification_window"] = false;
     global_patch["notification_window_position"] = "top_left";
     global_patch["notification_window_respect_screen_visible_frame"] = false;
@@ -72,10 +74,12 @@ int main() {
 
     // Verify the updated global settings and normalized color values.
     const auto& global = core_configuration.get_global_configuration();
+    expect(global.get_ui_language() == "en");
     expect(!global.get_check_for_updates());
     expect(!global.get_show_in_menu_bar());
     expect(global.get_show_profile_name_in_menu_bar());
     expect(global.get_show_additional_menu_items());
+    expect(!global.get_show_quit_confirmation_menu());
     expect(!global.get_enable_notification_window());
     expect(global.get_notification_window_position() == "top_left");
     expect(!global.get_notification_window_respect_screen_visible_frame());

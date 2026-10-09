@@ -23,10 +23,13 @@ struct ConnectedDeviceSelector: View {
         .tag(device.id)
       }
     }
-    .listStyle(.sidebar)
+    // With the device list in an HStack, sidebar styling can leave the previously selected row
+    // bold after switching away and back on macOS 27. Use regular inset-list selection styling.
+    .listStyle(.inset)
+    .modifier(FocusOnClick())
     .overlay {
       if client.connectedDevices.isEmpty {
-        Text("No devices connected.")
+        AppLocalizedText("event_viewer.devices.empty")
           .foregroundStyle(.secondary)
       }
     }

@@ -9,66 +9,61 @@
 
 namespace krbn::manipulator::manipulators::mouse_motion_to_scroll {
 class mouse_motion_to_scroll final : public base, public pqrs::dispatcher::extra::dispatcher_client {
+  pqrs::dispatcher::extra::dispatcher_client_constructor_exception_guard dispatcher_client_constructor_guard_{*this};
+
 public:
   mouse_motion_to_scroll(const nlohmann::json& json,
-                         pqrs::not_null_shared_ptr_t<const core_configuration::details::complex_modifications_parameters> parameters)
-      : base(),
-        dispatcher_client() {
-    try {
-      pqrs::json::requires_object(json, "json");
+                         pqrs::not_null_shared_ptr_t<const core_configuration::details::complex_modifications_parameters> parameters) {
+    dispatcher_client_constructor_guard_.initialize(
+        [&] {
+          pqrs::json::requires_object(json, "json");
 
-      for (const auto& [key, value] : json.items()) {
-        if (key == "from") {
-          pqrs::json::requires_object(value, "`" + key + "`");
+          for (const auto& [key, value] : json.items()) {
+            if (key == "from") {
+              pqrs::json::requires_object(value, "`" + key + "`");
 
-          for (const auto& [k, v] : value.items()) {
-            if (k == "modifiers") {
-              try {
-                from_modifiers_definition_ = v.get<from_modifiers_definition>();
-              } catch (const pqrs::json::unmarshal_error& e) {
-                throw pqrs::json::unmarshal_error(fmt::format("`{0}.{1}` error: {2}", key, k, e.what()));
+              for (const auto& [k, v] : value.items()) {
+                if (k == "modifiers") {
+                  try {
+                    from_modifiers_definition_ = v.get<from_modifiers_definition>();
+                  } catch (const pqrs::json::unmarshal_error& e) {
+                    throw pqrs::json::unmarshal_error(fmt::format("`{0}.{1}` error: {2}", key, k, e.what()));
+                  }
+
+                } else {
+                  throw pqrs::json::unmarshal_error(fmt::format("`{0}` error: unknown key `{1}` in `{2}`",
+                                                                key,
+                                                                k,
+                                                                pqrs::json::dump_for_error_message(value)));
+                }
               }
 
+            } else if (key == "options") {
+              try {
+                options_.update(value);
+              } catch (const pqrs::json::unmarshal_error& e) {
+                throw pqrs::json::unmarshal_error(fmt::format("`{0}` error: {1}", key, e.what()));
+              }
+
+            } else if (key == "description" ||
+                       key == "conditions" ||
+                       key == "parameters" ||
+                       key == "type") {
+              // Do nothing
+
             } else {
-              throw pqrs::json::unmarshal_error(fmt::format("`{0}` error: unknown key `{1}` in `{2}`",
-                                                            key,
-                                                            k,
-                                                            pqrs::json::dump_for_error_message(value)));
+              throw pqrs::json::unmarshal_error(fmt::format("unknown key `{0}` in `{1}`", key, pqrs::json::dump_for_error_message(json)));
             }
           }
 
-        } else if (key == "options") {
-          try {
-            options_.update(value);
-          } catch (const pqrs::json::unmarshal_error& e) {
-            throw pqrs::json::unmarshal_error(fmt::format("`{0}` error: {1}", key, e.what()));
-          }
+          counter_ = std::make_unique<counter>(weak_dispatcher_,
+                                               parameters,
+                                               options_);
 
-        } else if (key == "description" ||
-                   key == "conditions" ||
-                   key == "parameters" ||
-                   key == "type") {
-          // Do nothing
-
-        } else {
-          throw pqrs::json::unmarshal_error(fmt::format("unknown key `{0}` in `{1}`", key, pqrs::json::dump_for_error_message(json)));
-        }
-      }
-
-      counter_ = std::make_unique<counter>(weak_dispatcher_,
-                                           parameters,
-                                           options_);
-
-      counter_->scroll_event_arrived.connect([this](auto&& pointing_motion) {
-        post_events(pointing_motion);
-      });
-
-    } catch (...) {
-      detach_from_dispatcher([this] {
-        counter_ = nullptr;
-      });
-      throw;
-    }
+          counter_->scroll_event_arrived.connect([this](auto&& pointing_motion) {
+            post_events(pointing_motion);
+          });
+        });
   }
 
   ~mouse_motion_to_scroll() override {
